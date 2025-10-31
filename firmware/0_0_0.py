@@ -19,9 +19,9 @@ from gpiozero import CamJamKitRobot
 
 # --------- Tunables ----------
 TICK_S           = 0.5   # discrete step duration
-FORWARD_SPD      = 0.45
-TURN_SPD         = 0.45
-BACK_SPD         = 0.50
+FORWARD_SPD      = 0.40
+TURN_SPD         = 0.40
+BACK_SPD         = 0.40
 
 STOP_CM          = 15.0  # too close -> evasive turn
 CLEAR_CM         = 30.0  # comfortable clear
@@ -31,8 +31,8 @@ SAMPLES_PER_READ = 3
 # --- Stuck detection ---
 STUCK_DELTA_CM   = 5.0   # consider "no change" if spread < this
 STUCK_STEPS      = 4     # look back over this many ticks
-BACK_TICKS       = 4     # back up when stuck
-NUDGE_TICKS      = 2     # random turn after backoff
+BACK_TICKS       = 3     # back up when stuck
+NUDGE_TICKS      = 1     # random turn after backoff
 STUCK_COOLDOWN_STEPS = 4
 
 LOG_FILE = f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -168,6 +168,11 @@ class RawKeyboard:
                     self._push(('TOGGLE', None))
                     # consume remaining bytes in this batch
                     continue
+                # Ctrl+C (ETX) in raw mode won't raise KeyboardInterrupt; synthesize QUIT
+                if ch == '\x03':
+                    self._push(('QUIT', None))
+                    self._stop = True
+                    break
 
             # Map WASD (lower/upper)
             lower = buf.lower()
@@ -299,6 +304,8 @@ def main():
                     # clear autonomous macro queue on entering manual
                     if manual_mode:
                         queued_moves.clear()
+                elif kind == 'QUIT':
+                    raise KeyboardInterrupt
                 elif kind == 'CMD' and manual_mode:
                     # Push one-tick manual command
                     cmd = data  # forward/backward/left/right/stop
