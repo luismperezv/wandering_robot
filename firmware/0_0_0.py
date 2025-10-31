@@ -7,6 +7,7 @@ import sys
 import time
 import random
 import statistics
+import os
 import threading
 import select
 import termios
@@ -150,11 +151,18 @@ class CbreakKeyboard:
 
     def _run(self):
         while not self._stop:
-            r, _, _ = select.select([sys.stdin], [], [], 0.05)
+            r, _, _ = select.select([self._fd], [], [], 0.05)
             if not r:
                 continue
-            buf = sys.stdin.read(8)
-            if not buf:
+            try:
+                data = os.read(self._fd, 32)
+            except OSError:
+                continue
+            if not data:
+                continue
+            try:
+                buf = data.decode('utf-8', errors='ignore')
+            except Exception:
                 continue
 
             for ch in buf:
