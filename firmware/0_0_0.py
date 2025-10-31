@@ -7,10 +7,6 @@ import sys
 import time
 import random
 import statistics
-import threading
-import select
-import termios
-import tty
 from collections import deque
 from datetime import datetime
 
@@ -112,111 +108,7 @@ class PigpioUltrasonic:
         if self.pi and self.pi.connected:
             self.pi.stop()
 
-# --------- Keyboard (non-blocking, raw) ----------
-
-class RawKeyboard:
-    """
-    Non-blocking reader:
-      - Enter toggles manual mode
-      - Space -> stop
-      - Arrows (↑↓←→) -> forward/backward/left/right
-      - WASD fallback: W=forward, S=backward, A=left, D=right
-    """
-    def __init__(self):
-        self._fd = sys.stdin.fileno()
-        self._old = termios.tcgetattr(self._fd)
-        # raw gives us bytes immediately (no line buffering)
-        tty.setraw(self._fd)
-        self._lock = threading.Lock()
-        self._events = []
-        self._stop = False
-        self._thread = threading.Thread(target=self._run, daemon=True)
-
-    def start(self):
-        self._thread.start()
-
-    def stop(self):
-        self._stop = True
-        try:
-            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
-        except Exception:
-            pass
-
-    def _push(self, ev):
-        with self._lock:
-            self._events.append(ev)
-
-    def pop_event(self):
-        with self._lock:
-            return self._events.pop(0) if self._events else None
-
-    def _run(self):
-        while not self._stop:
-            r, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if not r:
-                continue
-
-            # Read everything currently available (up to a small chunk)
-            buf = sys.stdin.read(8)  # arrows are 3 bytes, app-mode 3 bytes; 8 is plenty
-            if not buf:
-                continue
-
-            # Handle single-byte keys first
-            for ch in buf:
-                # In raw mode, Enter is '\r' on most terminals
-                if ch == '\r':      # Enter
-                    self._push(('TOGGLE', None))
-                    # consume remaining bytes in this batch
-                    continue
-                # Ctrl+C (ETX) in raw mode won't raise KeyboardInterrupt; synthesize QUIT
-                if ch == '\x03':
-                    self._push(('QUIT', None))
-                    self._stop = True
-                    break
-
-            # Map WASD (lower/upper)
-            lower = buf.lower()
-            if 'w' in lower:
-                self._push(('CMD', 'forward'))
-            if 's' in lower:
-                self._push(('CMD', 'backward'))
-            if 'a' in lower:
-                self._push(('CMD', 'left'))
-            if 'd' in lower:
-                self._push(('CMD', 'right'))
-            if ' ' in buf:
-                self._push(('CMD', 'stop'))
-
-            # Parse escape sequences for arrows.
-            # Common variants:
-            #   CSI:       \x1b [ A/B/C/D  (3 bytes)
-            #   App-mode:  \x1b O A/B/C/D  (3 bytes)
-            # Buffer may contain multiple sequences; scan it.
-            i = 0
-            L = len(buf)
-            while i < L:
-                if buf[i] != '\x1b':  # not ESC, skip
-                    i += 1
-                    continue
-                if i + 2 < L:
-                    if buf[i+1] == '[':               # CSI
-                        code = buf[i+2]
-                        if code == 'A': self._push(('CMD', 'forward'))
-                        elif code == 'B': self._push(('CMD', 'backward'))
-                        elif code == 'C': self._push(('CMD', 'right'))
-                        elif code == 'D': self._push(('CMD', 'left'))
-                        i += 3
-                        continue
-                    if buf[i+1] == 'O':               # App-mode
-                        code = buf[i+2]
-                        if code == 'A': self._push(('CMD', 'forward'))
-                        elif code == 'B': self._push(('CMD', 'backward'))
-                        elif code == 'C': self._push(('CMD', 'right'))
-                        elif code == 'D': self._push(('CMD', 'left'))
-                        i += 3
-                        continue
-                # If we got a bare ESC or truncated sequence, just advance
-                i += 1
+## (Keyboard control removed)
 
 # --------- Motion helpers ----------
 def execute_motion(robot: CamJamKitRobot, motion: str, speed: float, duration: float):
@@ -276,72 +168,10 @@ def main():
     stuck_cooldown = 0
     queued_moves = []  # (motion, speed, ticks_remaining)
 
-    # Manual control
-    kb = RawKeyboard()
-    kb.start()
-    manual_mode = False
-    print("Controls: Enter=toggle MANUAL, arrows=drive, Space=stop. Ctrl+C to quit.")
-
     print(f"Logging to {LOG_FILE}.")
     try:
         while True:
-            # Check keyboard events (processed once per tick)
-            ev = kb.pop_event()
-            if ev:
-                kind, data = ev
-                if kind == 'TOGGLE':
-                    manual_mode = not manual_mode
-                    robot.stop()
-                    tag = "manual_start" if manual_mode else "manual_end"
-                    print(f"\n[{tag}]")
-                    # log the mode transition row (no motion executed yet)
-                    writer.writerow([
-                        datetime.now().isoformat(timespec="seconds"),
-                        ("MANUAL" if manual_mode else "AUTO"),
-                        "", "", "", "", "", tag, 0, len(queued_moves)
-                    ])
-                    f.flush()
-                    # clear autonomous macro queue on entering manual
-                    if manual_mode:
-                        queued_moves.clear()
-                elif kind == 'QUIT':
-                    raise KeyboardInterrupt
-                elif kind == 'CMD' and manual_mode:
-                    # Push one-tick manual command
-                    cmd = data  # forward/backward/left/right/stop
-                    speed = (FORWARD_SPD if cmd == "forward"
-                             else BACK_SPD if cmd == "backward"
-                             else TURN_SPD if cmd in ("left", "right")
-                             else 0.0)
-                    queued_moves.append((cmd, speed, 1))  # execute for one tick
-                    print(f"[manual cmd] {cmd}")
-
             tick_start = time.time()
-
-            # Choose what to execute this tick
-            if manual_mode:
-                # Manual: execute queued manual one-tick command if present, else stop
-                if queued_moves:
-                    exec_motion, exec_speed, exec_ticks = queued_moves.pop(0)
-                else:
-                    exec_motion, exec_speed = "stop", 0.0
-                execute_motion(robot, exec_motion, exec_speed, TICK_S)
-                # Distance still measured & logged in manual mode for context
-                d = sensor.distance_cm()
-                notes = "manual_cmd" if exec_motion != "stop" else "manual_idle"
-                next_motion, next_speed = ("manual", 0.0)  # placeholder for log
-                writer.writerow([
-                    datetime.now().isoformat(timespec="seconds"),
-                    "MANUAL",
-                    ("" if d == float('inf') else f"{d:.2f}"),
-                    exec_motion, f"{exec_speed:.2f}",
-                    next_motion, f"{next_speed:.2f}",
-                    notes, 0, 0
-                ])
-                f.flush()
-                continue  # next tick
-
-            # --- AUTO MODE below ---
             # 1) Execute queued stuck-macro if any, else current autonomous motion
             if queued_moves:
                 q_motion, q_speed, q_ticks = queued_moves[0]
@@ -408,10 +238,6 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
-        try:
-            kb.stop()
-        except Exception:
-            pass
         robot.stop()
         sensor.close()
         f.close()
