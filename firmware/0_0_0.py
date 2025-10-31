@@ -7,6 +7,10 @@ import sys
 import time
 import random
 import statistics
+import threading
+import select
+import termios
+import tty
 from collections import deque
 from datetime import datetime
 
@@ -108,7 +112,65 @@ class PigpioUltrasonic:
         if self.pi and self.pi.connected:
             self.pi.stop()
 
-## (Keyboard control removed)
+## --------- Keyboard (cbreak, non-blocking) ----------
+
+class CbreakKeyboard:
+    """
+    Cbreak-mode non-blocking reader:
+      - Enter toggles manual mode
+      - WASD: W=forward, S=backward, A=left, D=right
+    Ctrl+C still raises KeyboardInterrupt (we do not intercept it).
+    """
+    def __init__(self):
+        self._fd = sys.stdin.fileno()
+        self._old = termios.tcgetattr(self._fd)
+        tty.setcbreak(self._fd)
+        self._lock = threading.Lock()
+        self._events = []
+        self._stop = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop = True
+        try:
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+        except Exception:
+            pass
+
+    def _push(self, ev):
+        with self._lock:
+            self._events.append(ev)
+
+    def pop_event(self):
+        with self._lock:
+            return self._events.pop(0) if self._events else None
+
+    def _run(self):
+        while not self._stop:
+            r, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if not r:
+                continue
+            buf = sys.stdin.read(8)
+            if not buf:
+                continue
+
+            for ch in buf:
+                if ch in ('\r', '\n'):
+                    self._push(('TOGGLE', None))
+                    continue
+
+            lower = buf.lower()
+            if 'w' in lower:
+                self._push(('CMD', 'forward'))
+            if 's' in lower:
+                self._push(('CMD', 'backward'))
+            if 'a' in lower:
+                self._push(('CMD', 'left'))
+            if 'd' in lower:
+                self._push(('CMD', 'right'))
 
 # --------- Motion helpers ----------
 def execute_motion(robot: CamJamKitRobot, motion: str, speed: float, duration: float):
@@ -168,11 +230,61 @@ def main():
     stuck_cooldown = 0
     queued_moves = []  # (motion, speed, ticks_remaining)
 
+    # Manual control
+    kb = CbreakKeyboard()
+    kb.start()
+    manual_mode = False
+    print("Controls: Enter=toggle MANUAL, WASD=drive. Ctrl+C to quit.")
     print(f"Logging to {LOG_FILE}.")
     try:
         while True:
+            # Check keyboard events (once per tick)
+            ev = kb.pop_event()
+            if ev:
+                kind, data = ev
+                if kind == 'TOGGLE':
+                    manual_mode = not manual_mode
+                    robot.stop()
+                    tag = "manual_start" if manual_mode else "manual_end"
+                    print(f"\n[{tag}]")
+                    writer.writerow([
+                        datetime.now().isoformat(timespec="seconds"),
+                        ("MANUAL" if manual_mode else "AUTO"),
+                        "", "", "", "", "", tag, 0, len(queued_moves)
+                    ])
+                    f.flush()
+                    if manual_mode:
+                        queued_moves.clear()
+                elif kind == 'CMD' and manual_mode:
+                    cmd = data
+                    speed = (FORWARD_SPD if cmd == "forward"
+                             else BACK_SPD if cmd == "backward"
+                             else TURN_SPD if cmd in ("left", "right")
+                             else 0.0)
+                    queued_moves.append((cmd, speed, 1))
+                    print(f"[manual cmd] {cmd}")
             tick_start = time.time()
-            # 1) Execute queued stuck-macro if any, else current autonomous motion
+            # 1) Execute queued macro or current motion; in manual, execute queued manual or stop
+            if manual_mode:
+                if queued_moves:
+                    exec_motion, exec_speed, _ = queued_moves.pop(0)
+                else:
+                    exec_motion, exec_speed = "stop", 0.0
+                execute_motion(robot, exec_motion, exec_speed, TICK_S)
+                d = sensor.distance_cm()
+                notes = "manual_cmd" if exec_motion != "stop" else "manual_idle"
+                next_motion, next_speed = ("manual", 0.0)
+                writer.writerow([
+                    datetime.now().isoformat(timespec="seconds"),
+                    "MANUAL",
+                    ("" if d == float('inf') else f"{d:.2f}"),
+                    exec_motion, f"{exec_speed:.2f}",
+                    next_motion, f"{next_speed:.2f}",
+                    notes, 0, 0
+                ])
+                f.flush()
+                continue
+
             if queued_moves:
                 q_motion, q_speed, q_ticks = queued_moves[0]
                 exec_motion, exec_speed = q_motion, q_speed
