@@ -5,7 +5,6 @@ __pycache__/
 venv/
 
 # Logs & run data
-runlog_*.csv
 *.log
 
 # Firmware/build artifacts (adjust to your toolchain)
