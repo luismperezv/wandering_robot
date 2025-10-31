@@ -123,7 +123,16 @@ class CbreakKeyboard:
     Ctrl+C still raises KeyboardInterrupt (we do not intercept it).
     """
     def __init__(self):
-        self._fd = sys.stdin.fileno()
+        # Prefer controlling TTY directly to work under sudo/SSH
+        fd = None
+        self._tty_path = None
+        try:
+            fd = os.open('/dev/tty', os.O_RDONLY)
+            self._tty_path = '/dev/tty'
+        except Exception:
+            # Fallback to stdin
+            fd = sys.stdin.fileno()
+        self._fd = fd
         self._old = termios.tcgetattr(self._fd)
         tty.setcbreak(self._fd)
         self._lock = threading.Lock()
@@ -138,6 +147,12 @@ class CbreakKeyboard:
         self._stop = True
         try:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+        except Exception:
+            pass
+        try:
+            # Close if we explicitly opened /dev/tty
+            if self._tty_path:
+                os.close(self._fd)
         except Exception:
             pass
 
