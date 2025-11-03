@@ -280,7 +280,7 @@
   </main>
 
   <script>
-    // Mock live data (replace with WebSocket/EventSource later)
+    // Live data via SSE and control via POST
     const state = {
       mode: 'AUTO',
       distance: null,
@@ -403,43 +403,45 @@
       els.logBox.scrollTop = els.logBox.scrollHeight;
     }
 
-    // Controls (demo only)
-    els.btns.toggle.onclick = () => setMode(state.mode === 'AUTO' ? 'MANUAL' : 'AUTO');
-    els.btns.auto.onclick = () => setMode('AUTO');
-    els.btns.stop.onclick = () => { setMotion('stop', 0.0); appendLog('manual cmd: stop'); };
-    els.btns.fwd.onclick = () => { if (state.mode === 'MANUAL') { setMotion('forward', 0.40); setQueue(0); appendLog('manual cmd: forward'); } };
-    els.btns.left.onclick = () => { if (state.mode === 'MANUAL') { setMotion('left', 0.40); setQueue(0); appendLog('manual cmd: left'); } };
-    els.btns.right.onclick = () => { if (state.mode === 'MANUAL') { setMotion('right', 0.40); setQueue(0); appendLog('manual cmd: right'); } };
-    els.btns.back.onclick = () => { if (state.mode === 'MANUAL') { setMotion('backward', 0.40); setQueue(0); appendLog('manual cmd: backward'); } };
+    async function sendCmd(name) {
+      try {
+        await fetch('/api/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+      } catch {}
+    }
 
-    // Mock stream update (replace with real data feed)
-    setInterval(() => {
-      updateUptime();
+    // Controls wired to backend
+    els.btns.toggle.onclick = () => sendCmd('toggle');
+    els.btns.auto.onclick = () => sendCmd('auto');
+    els.btns.stop.onclick = () => sendCmd('stop');
+    els.btns.fwd.onclick = () => sendCmd('forward');
+    els.btns.left.onclick = () => sendCmd('left');
+    els.btns.right.onclick = () => sendCmd('right');
+    els.btns.back.onclick = () => sendCmd('backward');
 
-      // fake sensor
-      const d = Math.random() < 0.1 ? Infinity : 10 + Math.random() * 50;
-      setDistance(d);
-
-      if (state.mode === 'AUTO') {
-        // simple auto policy demo
-        let next = 'forward', speed = 0.40, note = 'clear';
-        if (!Number.isFinite(d)) {
-          next = 'forward'; note = 'no-echo/open';
-        } else if (d <= 15) {
-          next = Math.random() < 0.5 ? 'left' : 'right'; speed = 0.40; note = `obstacle@${d.toFixed(1)}cm`;
-        } else if (d < 30) {
-          next = 'forward'; speed = 0.32; note = `caution@${d.toFixed(1)}cm`;
-        }
-        setMotion(next, speed);
-        setQueue(Math.random() < 0.15 ? 1 : 0);
-        setStuck(Math.random() < 0.05);
-        els.explain.textContent = `AUTO: ${note} -> ${next} @ ${speed.toFixed(2)}`;
-        appendLog(`AUTO, d=${Number.isFinite(d) ? d.toFixed(1)+'cm' : 'inf'}, exec=${next}, speed=${speed.toFixed(2)}`);
-      } else {
-        // manual idle tick
-        appendLog(`MANUAL, d=${Number.isFinite(d) ? d.toFixed(1)+'cm' : 'inf'}, motion=${state.motion}`);
-      }
-    }, 1200);
+    // Live stream via SSE
+    function connectSSE() {
+      const es = new EventSource('/events');
+      es.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          const mode = msg.mode || 'AUTO';
+          setMode(mode);
+          const d = (typeof msg.distance_cm === 'number') ? msg.distance_cm : Infinity;
+          setDistance(Number.isFinite(d) ? d : Infinity);
+          setMotion(msg.executed_motion || 'stop', Number(msg.executed_speed || 0));
+          setQueue(Number(msg.queue_len || 0));
+          setStuck(!!msg.stuck);
+          els.explain.textContent = `${mode}: ${msg.notes || ''}`.trim();
+          els.cardLog.textContent = msg.log_file || els.cardLog.textContent;
+        } catch {}
+        updateUptime();
+      };
+      es.onerror = () => {
+        es.close();
+        setTimeout(connectSSE, 1500);
+      };
+    }
+    connectSSE();
 
     // Initialize
     els.cardLog.textContent = state.logFile;

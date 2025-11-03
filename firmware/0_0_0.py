@@ -15,6 +15,9 @@ import tty
 import socket
 import http.server
 from functools import partial
+import urllib.parse
+import json
+import queue
 from collections import deque
 from datetime import datetime
 
@@ -134,12 +137,123 @@ def _get_local_ip() -> str:
             pass
     return ip
 
+class _SSEClient:
+    def __init__(self):
+        self.queue: "queue.Queue[str]" = queue.Queue()
+        self.alive = True
+
+class DashboardHub:
+    def __init__(self):
+        self._clients: list[_SSEClient] = []
+        self._lock = threading.Lock()
+
+    def add_client(self, client: _SSEClient):
+        with self._lock:
+            self._clients.append(client)
+
+    def remove_client(self, client: _SSEClient):
+        with self._lock:
+            try:
+                self._clients.remove(client)
+            except ValueError:
+                pass
+
+    def broadcast(self, data: str):
+        with self._lock:
+            clients = list(self._clients)
+        for c in clients:
+            try:
+                c.queue.put_nowait(data)
+            except Exception:
+                c.alive = False
+
+class DashboardHandler(http.server.SimpleHTTPRequestHandler):
+    hub: DashboardHub = None  # set by server factory
+    commands: "queue.Queue[str]" = None  # set by server factory
+
+    def log_message(self, format, *args):
+        # reduce noise
+        return
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            client = _SSEClient()
+            self.hub.add_client(client)
+            try:
+                # initial hello to prompt ready state
+                self.wfile.write(b": hello\n\n")
+                self.wfile.flush()
+                while client.alive:
+                    try:
+                        msg = client.queue.get(timeout=15)
+                        payload = ("data: " + msg + "\n\n").encode("utf-8")
+                        self.wfile.write(payload)
+                        self.wfile.flush()
+                    except queue.Empty:
+                        # keep-alive comment
+                        try:
+                            self.wfile.write(b": keep-alive\n\n")
+                            self.wfile.flush()
+                        except Exception:
+                            break
+            except Exception:
+                pass
+            finally:
+                client.alive = False
+                self.hub.remove_client(client)
+            return
+        # static files
+        return super().do_GET()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/cmd":
+            cmd = None
+            # prefer JSON body
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = 0
+            body = self.rfile.read(length) if length > 0 else b""
+            if body:
+                try:
+                    obj = json.loads(body.decode("utf-8"))
+                    cmd = obj.get("name")
+                except Exception:
+                    cmd = None
+            if not cmd:
+                qs = urllib.parse.parse_qs(parsed.query)
+                vals = qs.get("name")
+                if vals:
+                    cmd = vals[0]
+            if cmd:
+                try:
+                    self.commands.put_nowait(cmd)
+                except Exception:
+                    pass
+                self.send_response(204)
+                self.end_headers()
+            else:
+                self.send_response(400)
+                self.end_headers()
+            return
+        self.send_response(404)
+        self.end_headers()
+
 def start_dashboard_server(root_dir: str, port: int = 8000):
     """
     Starts a background HTTP server that serves files from root_dir.
     Returns (server, thread). Call server.shutdown() to stop.
     """
-    handler_cls = partial(http.server.SimpleHTTPRequestHandler, directory=root_dir)
+    hub = DashboardHub()
+    commands_q: "queue.Queue[str]" = queue.Queue()
+    handler_cls = partial(DashboardHandler, directory=root_dir)
     try:
         httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
     except OSError:
@@ -147,11 +261,15 @@ def start_dashboard_server(root_dir: str, port: int = 8000):
         httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 0), handler_cls)
         port = httpd.server_address[1]
 
+    # attach shared hubs
+    DashboardHandler.hub = hub
+    DashboardHandler.commands = commands_q
+
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     url = f"http://{_get_local_ip()}:{port}/dashboard.html"
     print(f"Dashboard available at: {url}")
-    return httpd, t
+    return httpd, t, hub, commands_q
 
 ## --------- Keyboard (cbreak, non-blocking) ----------
 
@@ -275,8 +393,10 @@ def main():
     # Serve dashboard from project root in background
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     server = None
+    hub = None
+    commands_q = None
     try:
-        server, _ = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", "8000")))
+        server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", "8000")))
     except Exception as e:
         print(f"[dashboard] failed to start HTTP server: {e}")
 
@@ -309,6 +429,33 @@ def main():
     print(f"Logging to {LOG_FILE}.")
     try:
         while True:
+            # Drain web commands
+            if commands_q is not None:
+                while True:
+                    try:
+                        c = commands_q.get_nowait()
+                    except Exception:
+                        break
+                    if c == 'toggle':
+                        manual_mode = not manual_mode
+                        robot.stop()
+                        if manual_mode:
+                            queued_moves.clear()
+                    elif c == 'auto':
+                        manual_mode = False
+                        robot.stop()
+                        queued_moves.clear()
+                    elif c == 'stop':
+                        if manual_mode:
+                            queued_moves.clear()
+                            queued_moves.append(("stop", 0.0, 1))
+                    elif c in ('forward','backward','left','right'):
+                        if manual_mode:
+                            speed = (FORWARD_SPD if c == "forward"
+                                     else BACK_SPD if c == "backward"
+                                     else TURN_SPD)
+                            queued_moves.append((c, speed, 1))
+
             # Check keyboard events (once per tick)
             ev = kb.pop_event()
             if ev:
@@ -354,6 +501,24 @@ def main():
                     notes, 0, 0
                 ])
                 f.flush()
+                # broadcast MANUAL tick
+                if hub is not None:
+                    msg = {
+                        "mode": "MANUAL",
+                        "distance_cm": (None if d == float('inf') else round(d,2)),
+                        "executed_motion": exec_motion,
+                        "executed_speed": round(exec_speed,2),
+                        "next_motion": next_motion,
+                        "next_speed": next_speed,
+                        "notes": notes,
+                        "stuck": 0,
+                        "queue_len": 0,
+                        "log_file": LOG_FILE,
+                    }
+                    try:
+                        hub.broadcast(json.dumps(msg))
+                    except Exception:
+                        pass
                 continue
 
             if queued_moves:
@@ -417,6 +582,24 @@ def main():
                 len(queued_moves)
             ])
             f.flush()
+            # 6) Stream state over SSE
+            if hub is not None:
+                msg = {
+                    "mode": "AUTO",
+                    "distance_cm": (None if d == float('inf') else round(d,2)),
+                    "executed_motion": exec_motion,
+                    "executed_speed": round(exec_speed,2),
+                    "next_motion": (queued_moves[0][0] if queued_moves else current_motion),
+                    "next_speed": (queued_moves[0][1] if queued_moves else current_speed),
+                    "notes": notes,
+                    "stuck": stuck_triggered,
+                    "queue_len": len(queued_moves),
+                    "log_file": LOG_FILE,
+                }
+                try:
+                    hub.broadcast(json.dumps(msg))
+                except Exception:
+                    pass
 
     except KeyboardInterrupt:
         print("\nStopping...")
