@@ -18,6 +18,7 @@ from functools import partial
 import urllib.parse
 import json
 import queue
+import atexit
 from collections import deque
 from datetime import datetime
 
@@ -424,6 +425,7 @@ def main():
     # Manual control
     kb = CbreakKeyboard()
     kb.start()
+    atexit.register(kb.stop)
     manual_mode = False
     print("Controls: Enter=toggle MANUAL, WASD=drive. Ctrl+C to quit.")
     print(f"Logging to {LOG_FILE}.")
@@ -610,6 +612,10 @@ def main():
         try:
             if server:
                 server.shutdown()
+        except Exception:
+            pass
+        try:
+            kb.stop()
         except Exception:
             pass
 
