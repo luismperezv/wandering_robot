@@ -453,10 +453,12 @@ def main():
                             queued_moves.append(("stop", 0.0, 1))
                     elif c in ('forward','backward','left','right'):
                         if manual_mode:
-                            speed = (FORWARD_SPD if c == "forward"
+                            # Swap left/right for manual inputs (wiring orientation)
+                            motion = ('right' if c == 'left' else 'left' if c == 'right' else c)
+                            speed = (FORWARD_SPD if motion == "forward"
                                      else BACK_SPD if c == "backward"
                                      else TURN_SPD)
-                            queued_moves.append((c, speed, 1))
+                            queued_moves.append((motion, speed, 1))
 
             # Check keyboard events (once per tick)
             ev = kb.pop_event()
@@ -477,12 +479,14 @@ def main():
                         queued_moves.clear()
                 elif kind == 'CMD' and manual_mode:
                     cmd = data
-                    speed = (FORWARD_SPD if cmd == "forward"
-                             else BACK_SPD if cmd == "backward"
-                             else TURN_SPD if cmd in ("left", "right")
+                    # Swap left/right for manual inputs (wiring orientation)
+                    motion = ('right' if cmd == 'left' else 'left' if cmd == 'right' else cmd)
+                    speed = (FORWARD_SPD if motion == "forward"
+                             else BACK_SPD if motion == "backward"
+                             else TURN_SPD if motion in ("left", "right")
                              else 0.0)
-                    queued_moves.append((cmd, speed, 1))
-                    print(f"[manual cmd] {cmd}")
+                    queued_moves.append((motion, speed, 1))
+                    print(f"[manual cmd] {cmd} -> {motion}")
             tick_start = time.time()
             # 1) Execute queued macro or current motion; in manual, execute queued manual or stop
             if manual_mode:
