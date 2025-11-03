@@ -12,6 +12,9 @@ import threading
 import select
 import termios
 import tty
+import socket
+import http.server
+from functools import partial
 from collections import deque
 from datetime import datetime
 
@@ -112,6 +115,43 @@ class PigpioUltrasonic:
             self._cb.cancel()
         if self.pi and self.pi.connected:
             self.pi.stop()
+
+## --------- Lightweight HTTP server (serves dashboard) ----------
+def _get_local_ip() -> str:
+    """
+    Best-effort local IP discovery for printing a usable URL.
+    """
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        try:
+            sock.close()  # type: ignore[name-defined]
+        except Exception:
+            pass
+    return ip
+
+def start_dashboard_server(root_dir: str, port: int = 8000):
+    """
+    Starts a background HTTP server that serves files from root_dir.
+    Returns (server, thread). Call server.shutdown() to stop.
+    """
+    handler_cls = partial(http.server.SimpleHTTPRequestHandler, directory=root_dir)
+    try:
+        httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
+    except OSError:
+        # If port in use, let OS pick a free one
+        httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 0), handler_cls)
+        port = httpd.server_address[1]
+
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    url = f"http://{_get_local_ip()}:{port}/dashboard.html"
+    print(f"Dashboard available at: {url}")
+    return httpd, t
 
 ## --------- Keyboard (cbreak, non-blocking) ----------
 
@@ -232,6 +272,14 @@ def decide_next_motion(distance_cm: float, prev_motion: str) -> tuple[str, float
     return ("forward", FORWARD_SPD * 0.8, f"caution@{distance_cm:.1f}cm")
 
 def main():
+    # Serve dashboard from project root in background
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    server = None
+    try:
+        server, _ = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", "8000")))
+    except Exception as e:
+        print(f"[dashboard] failed to start HTTP server: {e}")
+
     robot = CamJamKitRobot()
     sensor = PigpioUltrasonic(TRIG, ECHO, max_distance_m=MAX_DISTANCE_M, samples=SAMPLES_PER_READ)
 
@@ -376,6 +424,11 @@ def main():
         robot.stop()
         sensor.close()
         f.close()
+        try:
+            if server:
+                server.shutdown()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
