@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Wandering Robot – Live Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f1220;
+      --panel: #171a2b;
+      --muted: #8a90b2;
+      --text: #e9ecff;
+      --accent: #7aa2ff;
+      --ok: #2ecc71;
+      --warn: #f39c12;
+      --err: #e74c3c;
+      --arrow-idle: #2b2f47;
+      --arrow-active: #7aa2ff;
+    }
+    * { box-sizing: border-box }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 20% -10%, #19203c 0%, #0f1220 55%), var(--bg);
+      color: var(--text);
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid #232747;
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(6px);
+      background: rgba(15, 18, 32, 0.7);
+      z-index: 10;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0.3px;
+    }
+    header .pill {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #1e2342;
+      color: var(--muted);
+      border: 1px solid #2a2f57;
+    }
+
+    .container {
+      padding: 20px 24px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      grid-template-areas:
+        "top-cards top-cards"
+        "viz sidebar"
+        "logs controls";
+      grid-gap: 20px;
+    }
+
+    /* Top status cards */
+    .cards { grid-area: top-cards; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .card {
+      background: linear-gradient(180deg, #1b1f38 0%, #161a2f 100%);
+      border: 1px solid #2a2f57;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 10px 24px rgba(0,0,0,0.2);
+      min-height: 86px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; }
+    .card .value { font-size: 24px; font-weight: 600; letter-spacing: 0.2px; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid #2a2f57; color: var(--muted); }
+
+    /* Visualization + Sidebar */
+    .viz {
+      grid-area: viz;
+      background: linear-gradient(180deg, #171b33 0%, #151831 100%);
+      border: 1px solid #2a2f57;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .viz h2, .sidebar h2, .panel h2 { margin: 0 0 12px; font-size: 14px; color: var(--muted); font-weight: 600; letter-spacing: 0.3px; }
+
+    .viz-canvas {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1.6 / 1; /* wide top-down viewport */
+      background: radial-gradient(900px 400px at 50% -10%, rgba(122,162,255,0.06), transparent 60%),
+                  repeating-linear-gradient(0deg, #1b2142, #1b2142 2px, #181d39 2px, #181d39 40px);
+      border-radius: 10px;
+      border: 1px solid #2a2f57;
+      overflow: hidden;
+    }
+
+    /* Robot diagram (SVG) */
+    .svg-wrap { position: absolute; inset: 0; display: grid; place-items: center; }
+    .arrow { transition: fill 160ms ease, opacity 160ms ease; fill: var(--arrow-idle); opacity: 0.8; }
+    .arrow.active { fill: var(--arrow-active); opacity: 1; }
+    .robot-body { fill: #121528; stroke: #3a4276; stroke-width: 2; }
+    .wheel { fill: #0e1122; stroke: #2d335d; stroke-width: 2; }
+    .sensor-cone { fill: rgba(122,162,255,0.10); stroke: rgba(122,162,255,0.25); }
+    .sensor-dot { fill: #7aa2ff; }
+
+    /* Sidebar (explanation/state) */
+    .sidebar {
+      grid-area: sidebar;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+    }
+    .panel {
+      background: linear-gradient(180deg, #1b1f38 0%, #161a2f 100%);
+      border: 1px solid #2a2f57;
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .explain { font-size: 14px; color: #cdd4ff; line-height: 1.4; }
+    .kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 10px; font-size: 13px; color: #cdd4ff; }
+    .kv .k { color: var(--muted); }
+
+    /* Logs and Controls */
+    .logs { grid-area: logs; }
+    .controls { grid-area: controls; }
+
+    .log-box {
+      height: 240px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #2a2f57;
+      background: #111428;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12.5px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .btns { display: flex; flex-wrap: wrap; gap: 10px; }
+    button {
+      background: #1d2346;
+      color: var(--text);
+      border: 1px solid #2a2f57;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: transform 120ms ease, background 160ms ease, border-color 160ms ease;
+    }
+    button:hover { background: #212858; border-color: #3a4276; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    .btn-accent { background: #2a356e; border-color: #4250a3; }
+    .btn-danger { background: #4b1d2b; border-color: #a33f5a; }
+    .btn-success { background: #1f3f30; border-color: #2e6f52; }
+
+    @media (max-width: 980px) {
+      .container {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "top-cards"
+          "viz"
+          "sidebar"
+          "logs"
+          "controls";
+      }
+      .cards { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+  </head>
+  <body>
+  <header>
+    <h1>Wandering Robot • Live Dashboard</h1>
+    <div class="pill" id="modePill">Mode: AUTO</div>
+  </header>
+
+  <main class="container">
+    <!-- TOP CARDS -->
+    <section class="cards">
+      <div class="card">
+        <div class="label">Distance</div>
+        <div class="value" id="cardDistance">—</div>
+        <span class="badge" id="distanceBadge">waiting…</span>
+      </div>
+      <div class="card">
+        <div class="label">Motion</div>
+        <div class="value" id="cardMotion">stop</div>
+        <span class="badge" id="speedBadge">0.00</span>
+      </div>
+      <div class="card">
+        <div class="label">Queue</div>
+        <div class="value" id="cardQueue">0</div>
+        <span class="badge" id="stuckBadge">stuck: no</span>
+      </div>
+      <div class="card">
+        <div class="label">Log File</div>
+        <div class="value" id="cardLog">runlog_YYYYMMDD_HHMMSS.csv</div>
+        <span class="badge" id="uptimeBadge">uptime: —</span>
+      </div>
+    </section>
+
+    <!-- VISUALIZATION -->
+    <section class="viz">
+      <h2>Top View</h2>
+      <div class="viz-canvas">
+        <div class="svg-wrap">
+          <svg viewBox="0 0 600 360" width="100%" height="100%" aria-label="Robot top view">
+            <!-- sensor cone -->
+            <polygon class="sensor-cone" points="300,120 230,20 370,20" />
+            <circle class="sensor-dot" cx="300" cy="120" r="4"/>
+            <!-- arrows -->
+            <polygon id="arrowUp" class="arrow" points="300,45 285,70 315,70"/>
+            <polygon id="arrowDown" class="arrow" points="300,315 285,290 315,290"/>
+            <polygon id="arrowLeft" class="arrow" points="120,180 145,165 145,195"/>
+            <polygon id="arrowRight" class="arrow" points="480,180 455,165 455,195"/>
+            <!-- robot body -->
+            <rect class="robot-body" x="250" y="120" width="100" height="120" rx="14" />
+            <!-- wheels -->
+            <rect class="wheel" x="235" y="120" width="14" height="120" rx="3" />
+            <rect class="wheel" x="351" y="120" width="14" height="120" rx="3" />
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="panel">
+        <h2>What the robot is doing</h2>
+        <div class="explain" id="explain">
+          Deciding next motion…
+        </div>
+      </div>
+      <div class="panel">
+        <h2>State</h2>
+        <div class="kv">
+          <div class="k">Mode</div><div id="kvMode">AUTO</div>
+          <div class="k">Distance</div><div id="kvDistance">—</div>
+          <div class="k">Motion</div><div id="kvMotion">stop</div>
+          <div class="k">Speed</div><div id="kvSpeed">0.00</div>
+          <div class="k">Queued</div><div id="kvQueue">0</div>
+          <div class="k">Stuck</div><div id="kvStuck">no</div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Controls</h2>
+        <div class="btns">
+          <button class="btn-accent" id="btnToggle">Enter ⏯ Toggle Manual</button>
+          <button id="btnFwd">W ⬆ Forward</button>
+          <button id="btnLeft">A ⬅ Left</button>
+          <button id="btnRight">D ➡ Right</button>
+          <button id="btnBack">S ⬇ Backward</button>
+          <button class="btn-success" id="btnAuto">Resume AUTO</button>
+          <button class="btn-danger" id="btnStop">Stop</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- LOGS -->
+    <section class="panel logs">
+      <h2>Live Log</h2>
+      <div class="log-box" id="logBox"></div>
+    </section>
+
+    <!-- CONTROLS (keyboard help) -->
+    <section class="panel controls">
+      <h2>Keyboard</h2>
+      <div class="explain">
+        Press Enter to toggle MANUAL/AUTO, and use W/A/S/D to drive in MANUAL. In AUTO, the robot decides motions based on the distance sensor and stuck detection.
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // Mock live data (replace with WebSocket/EventSource later)
+    const state = {
+      mode: 'AUTO',
+      distance: null,
+      motion: 'stop',
+      speed: 0,
+      queue: 0,
+      stuck: false,
+      logFile: 'runlog_YYYYMMDD_HHMMSS.csv',
+      uptimeStart: Date.now()
+    };
+
+    const els = {
+      modePill: document.getElementById('modePill'),
+      cardDistance: document.getElementById('cardDistance'),
+      distanceBadge: document.getElementById('distanceBadge'),
+      cardMotion: document.getElementById('cardMotion'),
+      speedBadge: document.getElementById('speedBadge'),
+      cardQueue: document.getElementById('cardQueue'),
+      stuckBadge: document.getElementById('stuckBadge'),
+      cardLog: document.getElementById('cardLog'),
+      uptimeBadge: document.getElementById('uptimeBadge'),
+      explain: document.getElementById('explain'),
+      kvMode: document.getElementById('kvMode'),
+      kvDistance: document.getElementById('kvDistance'),
+      kvMotion: document.getElementById('kvMotion'),
+      kvSpeed: document.getElementById('kvSpeed'),
+      kvQueue: document.getElementById('kvQueue'),
+      kvStuck: document.getElementById('kvStuck'),
+      logBox: document.getElementById('logBox'),
+      arrows: {
+        forward: document.getElementById('arrowUp'),
+        backward: document.getElementById('arrowDown'),
+        left: document.getElementById('arrowLeft'),
+        right: document.getElementById('arrowRight'),
+      },
+      btns: {
+        toggle: document.getElementById('btnToggle'),
+        fwd: document.getElementById('btnFwd'),
+        left: document.getElementById('btnLeft'),
+        right: document.getElementById('btnRight'),
+        back: document.getElementById('btnBack'),
+        auto: document.getElementById('btnAuto'),
+        stop: document.getElementById('btnStop'),
+      }
+    };
+
+    function setMode(mode) {
+      state.mode = mode;
+      els.modePill.textContent = `Mode: ${mode}`;
+      els.kvMode.textContent = mode;
+      appendLog(`MODE -> ${mode}`);
+      els.explain.textContent = (mode === 'AUTO')
+        ? 'Autonomous navigation: evaluating distance and stuck heuristics.'
+        : 'Manual control: use W/A/S/D or buttons to command one-tick moves.';
+    }
+
+    function setMotion(motion, speed) {
+      state.motion = motion;
+      state.speed = speed;
+      els.cardMotion.textContent = motion;
+      els.kvMotion.textContent = motion;
+      els.speedBadge.textContent = speed.toFixed(2);
+      els.kvSpeed.textContent = speed.toFixed(2);
+      updateArrows(motion);
+    }
+
+    function setDistance(d) {
+      state.distance = d;
+      els.cardDistance.textContent = Number.isFinite(d) ? `${d.toFixed(1)} cm` : '—';
+      els.kvDistance.textContent = Number.isFinite(d) ? `${d.toFixed(1)} cm` : '—';
+      if (!Number.isFinite(d)) {
+        els.distanceBadge.textContent = 'no echo';
+        els.distanceBadge.style.color = 'var(--muted)';
+      } else if (d <= 15) {
+        els.distanceBadge.textContent = 'too close';
+        els.distanceBadge.style.color = 'var(--err)';
+      } else if (d >= 30) {
+        els.distanceBadge.textContent = 'clear';
+        els.distanceBadge.style.color = 'var(--ok)';
+      } else {
+        els.distanceBadge.textContent = 'caution';
+        els.distanceBadge.style.color = 'var(--warn)';
+      }
+    }
+
+    function setQueue(n) {
+      state.queue = n;
+      els.cardQueue.textContent = n;
+      els.kvQueue.textContent = n;
+    }
+
+    function setStuck(flag) {
+      state.stuck = flag;
+      els.stuckBadge.textContent = `stuck: ${flag ? 'yes' : 'no'}`;
+      els.kvStuck.textContent = flag ? 'yes' : 'no';
+      els.stuckBadge.style.color = flag ? 'var(--warn)' : 'var(--muted)';
+    }
+
+    function updateUptime() {
+      const secs = Math.floor((Date.now() - state.uptimeStart) / 1000);
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      els.uptimeBadge.textContent = `uptime: ${m}m ${s}s`;
+    }
+
+    function updateArrows(active) {
+      for (const key of Object.keys(els.arrows)) {
+        els.arrows[key].classList.toggle('active', key === active);
+      }
+      if (!['forward', 'backward', 'left', 'right'].includes(active)) {
+        for (const key of Object.keys(els.arrows)) {
+          els.arrows[key].classList.remove('active');
+        }
+      }
+    }
+
+    function appendLog(line) {
+      const time = new Date().toISOString().replace('T',' ').slice(0,19);
+      els.logBox.textContent += `[${time}] ${line}\n`;
+      els.logBox.scrollTop = els.logBox.scrollHeight;
+    }
+
+    // Controls (demo only)
+    els.btns.toggle.onclick = () => setMode(state.mode === 'AUTO' ? 'MANUAL' : 'AUTO');
+    els.btns.auto.onclick = () => setMode('AUTO');
+    els.btns.stop.onclick = () => { setMotion('stop', 0.0); appendLog('manual cmd: stop'); };
+    els.btns.fwd.onclick = () => { if (state.mode === 'MANUAL') { setMotion('forward', 0.40); setQueue(0); appendLog('manual cmd: forward'); } };
+    els.btns.left.onclick = () => { if (state.mode === 'MANUAL') { setMotion('left', 0.40); setQueue(0); appendLog('manual cmd: left'); } };
+    els.btns.right.onclick = () => { if (state.mode === 'MANUAL') { setMotion('right', 0.40); setQueue(0); appendLog('manual cmd: right'); } };
+    els.btns.back.onclick = () => { if (state.mode === 'MANUAL') { setMotion('backward', 0.40); setQueue(0); appendLog('manual cmd: backward'); } };
+
+    // Mock stream update (replace with real data feed)
+    setInterval(() => {
+      updateUptime();
+
+      // fake sensor
+      const d = Math.random() < 0.1 ? Infinity : 10 + Math.random() * 50;
+      setDistance(d);
+
+      if (state.mode === 'AUTO') {
+        // simple auto policy demo
+        let next = 'forward', speed = 0.40, note = 'clear';
+        if (!Number.isFinite(d)) {
+          next = 'forward'; note = 'no-echo/open';
+        } else if (d <= 15) {
+          next = Math.random() < 0.5 ? 'left' : 'right'; speed = 0.40; note = `obstacle@${d.toFixed(1)}cm`;
+        } else if (d < 30) {
+          next = 'forward'; speed = 0.32; note = `caution@${d.toFixed(1)}cm`;
+        }
+        setMotion(next, speed);
+        setQueue(Math.random() < 0.15 ? 1 : 0);
+        setStuck(Math.random() < 0.05);
+        els.explain.textContent = `AUTO: ${note} -> ${next} @ ${speed.toFixed(2)}`;
+        appendLog(`AUTO, d=${Number.isFinite(d) ? d.toFixed(1)+'cm' : 'inf'}, exec=${next}, speed=${speed.toFixed(2)}`);
+      } else {
+        // manual idle tick
+        appendLog(`MANUAL, d=${Number.isFinite(d) ? d.toFixed(1)+'cm' : 'inf'}, motion=${state.motion}`);
+      }
+    }, 1200);
+
+    // Initialize
+    els.cardLog.textContent = state.logFile;
+    setMode('AUTO');
+    setMotion('stop', 0.00);
+    setDistance(Infinity);
+    setQueue(0);
+    setStuck(false);
+    updateUptime();
+  </script>
+  </body>
+  </html>
+
+
