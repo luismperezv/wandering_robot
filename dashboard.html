@@ -94,8 +94,7 @@
       position: relative;
       width: 100%;
       aspect-ratio: 1.6 / 1; /* wide top-down viewport */
-      background: radial-gradient(900px 400px at 50% -10%, rgba(122,162,255,0.06), transparent 60%),
-                  repeating-linear-gradient(0deg, #1b2142, #1b2142 2px, #181d39 2px, #181d39 40px);
+      background: radial-gradient(900px 400px at 50% -10%, rgba(122,162,255,0.06), transparent 60%);
       border-radius: 10px;
       border: 1px solid #2a2f57;
       overflow: hidden;
@@ -144,7 +143,10 @@
       white-space: pre-wrap;
     }
 
-    .btns { display: flex; flex-wrap: wrap; gap: 10px; }
+    .btns { display: grid; gap: 10px; }
+    .btn-row { display: flex; gap: 10px; align-items: center; }
+    .btn-row.space-between { justify-content: space-between; }
+    .btn-row.center { justify-content: center; }
     button {
       background: #1d2346;
       color: var(--text);
@@ -155,6 +157,11 @@
       letter-spacing: 0.3px;
       cursor: pointer;
       transition: transform 120ms ease, background 160ms ease, border-color 160ms ease;
+      width: 160px; /* consistent width across rows */
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
     button:hover { background: #212858; border-color: #3a4276; transform: translateY(-1px); }
     button:active { transform: translateY(0); }
@@ -213,19 +220,23 @@
       <div class="viz-canvas">
         <div class="svg-wrap">
           <svg viewBox="0 0 600 360" width="100%" height="100%" aria-label="Robot top view">
-            <!-- sensor cone -->
-            <polygon class="sensor-cone" points="300,120 230,20 370,20" />
+            <!-- sensor cone: dynamic 40° sector -->
+            <path id="sensorCone" class="sensor-cone" d="" />
+            <text id="sensorLabel" x="300" y="90" text-anchor="middle" font-size="12" fill="#cdd4ff">&gt;1m</text>
             <circle class="sensor-dot" cx="300" cy="120" r="4"/>
             <!-- arrows -->
             <polygon id="arrowUp" class="arrow" points="300,45 285,70 315,70"/>
             <polygon id="arrowDown" class="arrow" points="300,315 285,290 315,290"/>
             <polygon id="arrowLeft" class="arrow" points="120,180 145,165 145,195"/>
             <polygon id="arrowRight" class="arrow" points="480,180 455,165 455,195"/>
-            <!-- robot body -->
-            <rect class="robot-body" x="250" y="120" width="100" height="120" rx="14" />
-            <!-- wheels -->
-            <rect class="wheel" x="235" y="120" width="14" height="120" rx="3" />
-            <rect class="wheel" x="351" y="120" width="14" height="120" rx="3" />
+            <!-- robot, scaled to 0.5x around center (300,180) -->
+            <g id="robotGroup" transform="translate(300,180) scale(0.5) translate(-300,-180)">
+              <!-- robot body -->
+              <rect class="robot-body" x="250" y="120" width="100" height="120" rx="14" />
+              <!-- wheels -->
+              <rect class="wheel" x="235" y="120" width="14" height="120" rx="3" />
+              <rect class="wheel" x="351" y="120" width="14" height="120" rx="3" />
+            </g>
           </svg>
         </div>
       </div>
@@ -253,13 +264,18 @@
       <div class="panel">
         <h2>Controls</h2>
         <div class="btns">
-          <button class="btn-accent" id="btnToggle">Enter ⏯ Toggle Manual</button>
-          <button id="btnFwd">W ⬆ Forward</button>
-          <button id="btnLeft">A ⬅ Left</button>
-          <button id="btnRight">D ➡ Right</button>
-          <button id="btnBack">S ⬇ Backward</button>
-          <button class="btn-success" id="btnAuto">Resume AUTO</button>
-          <button class="btn-danger" id="btnStop">Stop</button>
+          <div class="btn-row space-between">
+            <button class="btn-accent" id="btnToggle">⏯ Toggle Manual</button>
+            <button class="btn-danger" id="btnStop">⏹ Stop</button>
+          </div>
+          <div class="btn-row center">
+            <button id="btnFwd">⬆ Forward</button>
+          </div>
+          <div class="btn-row center">
+            <button id="btnLeft">⬅ Left</button>
+            <button id="btnBack">⬇ Backward</button>
+            <button id="btnRight">Right ➡</button>
+          </div>
         </div>
       </div>
     </aside>
@@ -322,7 +338,6 @@
         left: document.getElementById('btnLeft'),
         right: document.getElementById('btnRight'),
         back: document.getElementById('btnBack'),
-        auto: document.getElementById('btnAuto'),
         stop: document.getElementById('btnStop'),
       }
     };
@@ -364,6 +379,7 @@
         els.distanceBadge.textContent = 'caution';
         els.distanceBadge.style.color = 'var(--warn)';
       }
+      updateSensorCone(d);
     }
 
     function setQueue(n) {
@@ -411,7 +427,6 @@
 
     // Controls wired to backend
     els.btns.toggle.onclick = () => sendCmd('toggle');
-    els.btns.auto.onclick = () => sendCmd('auto');
     els.btns.stop.onclick = () => sendCmd('stop');
     els.btns.fwd.onclick = () => sendCmd('forward');
     els.btns.left.onclick = () => sendCmd('left');
@@ -451,6 +466,49 @@
     setQueue(0);
     setStuck(false);
     updateUptime();
+
+    // Sensor cone drawing helpers
+    const sensor = { cx: 300, cy: 120 };
+    function polarToXY(cx, cy, r, angleDeg) {
+      const rad = (angleDeg * Math.PI) / 180;
+      return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+    }
+    function updateSensorCone(distanceCm) {
+      const maxCm = 100; // 1m
+      const isFiniteDistance = Number.isFinite(distanceCm);
+      const clamped = isFiniteDistance ? Math.max(0, Math.min(distanceCm, maxCm)) : maxCm;
+      const ratio = clamped / maxCm; // 0..1
+      const maxR = 120; // pixels at 1m
+      const r = Math.max(12, maxR * ratio);
+      const base = -90; // facing up
+      const spread = 20; // 40° total
+      const a1 = base - spread;
+      const a2 = base + spread;
+      const p1 = polarToXY(sensor.cx, sensor.cy, r, a1);
+      const p2 = polarToXY(sensor.cx, sensor.cy, r, a2);
+      const d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y} Z`;
+      const cone = document.getElementById('sensorCone');
+      const label = document.getElementById('sensorLabel');
+      cone.setAttribute('d', d);
+      // Color: green (120) at >1m, to red (0) at 0cm
+      const hue = Math.round(120 * ratio);
+      const fill = `hsla(${hue}, 80%, 55%, 0.18)`;
+      const stroke = `hsla(${hue}, 80%, 55%, 0.6)`;
+      cone.setAttribute('fill', fill);
+      cone.setAttribute('stroke', stroke);
+      cone.setAttribute('stroke-width', '2');
+      // Label
+      const mid = polarToXY(sensor.cx, sensor.cy, r + 14, base);
+      label.setAttribute('x', String(mid.x));
+      label.setAttribute('y', String(mid.y));
+      if (!isFiniteDistance || distanceCm >= 100) {
+        label.textContent = '>1m';
+      } else if (distanceCm >= 10) {
+        label.textContent = `${Math.round(distanceCm)} cm`;
+      } else {
+        label.textContent = `${distanceCm.toFixed(1)} cm`;
+      }
+    }
   </script>
   </body>
   </html>
