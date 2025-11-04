@@ -106,7 +106,7 @@
     .arrow.active { fill: var(--arrow-active); opacity: 1; }
     .robot-body { fill: #121528; stroke: #3a4276; stroke-width: 2; }
     .wheel { fill: #0e1122; stroke: #2d335d; stroke-width: 2; }
-    .sensor-cone { fill: rgba(122,162,255,0.10); stroke: rgba(122,162,255,0.25); }
+    .sensor-cone { /* dynamic fill/stroke set via JS */ }
     .sensor-dot { fill: #7aa2ff; }
 
     /* Sidebar (explanation/state) */
@@ -217,13 +217,16 @@
     <!-- VISUALIZATION -->
     <section class="viz">
       <h2>Top View</h2>
+      <div style="font-size:12px; color: var(--muted); display:flex; gap:10px; align-items:center; margin-bottom:8px;">
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="dbgSim" /> Simulate distance
+        </label>
+        <input type="range" id="dbgRange" min="0" max="200" value="100" style="flex:1;" />
+        <span id="dbgVal">100 cm</span>
+      </div>
       <div class="viz-canvas">
         <div class="svg-wrap">
           <svg viewBox="0 0 600 360" width="100%" height="100%" aria-label="Robot top view">
-            <!-- sensor cone: dynamic 40° sector -->
-            <path id="sensorCone" class="sensor-cone" d="" />
-            <text id="sensorLabel" x="300" y="90" text-anchor="middle" font-size="12" fill="#cdd4ff">&gt;1m</text>
-            <circle class="sensor-dot" cx="300" cy="120" r="4"/>
             <!-- arrows -->
             <polygon id="arrowUp" class="arrow" points="300,45 285,70 315,70"/>
             <polygon id="arrowDown" class="arrow" points="300,315 285,290 315,290"/>
@@ -237,6 +240,10 @@
               <rect class="wheel" x="235" y="120" width="14" height="120" rx="3" />
               <rect class="wheel" x="351" y="120" width="14" height="120" rx="3" />
             </g>
+            <!-- sensor cone: dynamic 40° sector (on top of robot) -->
+            <path id="sensorCone" class="sensor-cone" d="M 300 150 L 280 20 A 140 140 0 0 1 320 20 Z" />
+            <text id="sensorLabel" x="300" y="120" text-anchor="middle" font-size="12" fill="#cdd4ff">&gt;1m</text>
+            <circle class="sensor-dot" cx="300" cy="150" r="4"/>
           </svg>
         </div>
       </div>
@@ -305,8 +312,11 @@
       queue: 0,
       stuck: false,
       logFile: 'runlog_YYYYMMDD_HHMMSS.csv',
-      uptimeStart: Date.now()
+      uptimeStart: Date.now(),
+      simulateDistance: (location.protocol === 'file:'),
+      enableSSE: (location.protocol !== 'file:')
     };
+    const sensor = { cx: 300, cy: 150 };
 
     const els = {
       modePill: document.getElementById('modePill'),
@@ -341,6 +351,10 @@
         stop: document.getElementById('btnStop'),
       }
     };
+    
+
+    // Sensor origin (must be defined before any distance updates)
+    
 
     function setMode(mode) {
       state.mode = mode;
@@ -435,14 +449,22 @@
 
     // Live stream via SSE
     function connectSSE() {
-      const es = new EventSource('/events');
+      if (!state.enableSSE) return;
+      let es;
+      try {
+        es = new EventSource('/events');
+      } catch {
+        return;
+      }
       es.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data);
           const mode = msg.mode || 'AUTO';
           setMode(mode);
           const d = (typeof msg.distance_cm === 'number') ? msg.distance_cm : Infinity;
-          setDistance(Number.isFinite(d) ? d : Infinity);
+          if (!state.simulateDistance) {
+            setDistance(Number.isFinite(d) ? d : Infinity);
+          }
           setMotion(msg.executed_motion || 'stop', Number(msg.executed_speed || 0));
           setQueue(Number(msg.queue_len || 0));
           setStuck(!!msg.stuck);
@@ -468,7 +490,7 @@
     updateUptime();
 
     // Sensor cone drawing helpers
-    const sensor = { cx: 300, cy: 120 };
+    
     function polarToXY(cx, cy, r, angleDeg) {
       const rad = (angleDeg * Math.PI) / 180;
       return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
@@ -478,7 +500,7 @@
       const isFiniteDistance = Number.isFinite(distanceCm);
       const clamped = isFiniteDistance ? Math.max(0, Math.min(distanceCm, maxCm)) : maxCm;
       const ratio = clamped / maxCm; // 0..1
-      const maxR = 120; // pixels at 1m
+      const maxR = 140; // pixels at 1m (slightly larger for visibility)
       const r = Math.max(12, maxR * ratio);
       const base = -90; // facing up
       const spread = 20; // 40° total
@@ -486,14 +508,22 @@
       const a2 = base + spread;
       const p1 = polarToXY(sensor.cx, sensor.cy, r, a1);
       const p2 = polarToXY(sensor.cx, sensor.cy, r, a2);
-      const d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y} Z`;
+      let d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y} Z`;
       const cone = document.getElementById('sensorCone');
       const label = document.getElementById('sensorLabel');
       cone.setAttribute('d', d);
+      // Fallback: if arc bbox is zero (some browsers/flags combos), draw as triangle sector
+      try {
+        const bb = cone.getBBox();
+        if (bb.width === 0 || bb.height === 0) {
+          d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} L ${p2.x} ${p2.y} Z`;
+          cone.setAttribute('d', d);
+        }
+      } catch {}
       // Color: green (120) at >1m, to red (0) at 0cm
       const hue = Math.round(120 * ratio);
-      const fill = `hsla(${hue}, 80%, 55%, 0.18)`;
-      const stroke = `hsla(${hue}, 80%, 55%, 0.6)`;
+      const fill = `hsla(${hue}, 80%, 55%, 0.28)`;
+      const stroke = `hsla(${hue}, 80%, 55%, 0.75)`;
       cone.setAttribute('fill', fill);
       cone.setAttribute('stroke', stroke);
       cone.setAttribute('stroke-width', '2');
@@ -508,6 +538,35 @@
       } else {
         label.textContent = `${distanceCm.toFixed(1)} cm`;
       }
+      if (state.simulateDistance) {
+        console.log('[SIM] distance:', distanceCm, 'r:', r.toFixed(1), 'hue:', hue, 'd:', d);
+      }
+    }
+
+    // Debug: distance simulation controls
+    const dbgSim = document.getElementById('dbgSim');
+    const dbgRange = document.getElementById('dbgRange');
+    const dbgVal = document.getElementById('dbgVal');
+    if (dbgSim && dbgRange && dbgVal) {
+      const applySim = () => {
+        const val = Number(dbgRange.value);
+        dbgVal.textContent = `${val} cm`;
+        // Always reflect slider in the visualization; in non-sim mode SSE may later override
+        setDistance(val);
+      };
+      dbgSim.addEventListener('change', () => {
+        state.simulateDistance = dbgSim.checked;
+        applySim();
+      });
+      dbgRange.addEventListener('input', applySim);
+    }
+
+    // Force an initial draw of the sensor cone so it's visible even before data
+    updateSensorCone(100);
+    if (state.simulateDistance) {
+      if (dbgSim) dbgSim.checked = true;
+      const start = dbgRange ? Number(dbgRange.value) : 100;
+      setDistance(start);
     }
   </script>
   </body>
