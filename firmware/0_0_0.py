@@ -25,6 +25,14 @@ from datetime import datetime
 import pigpio
 from gpiozero import CamJamKitRobot
 
+# Config and keyboard (support running as module or script)
+try:
+    from firmware import config
+    from firmware.control.keyboard import CbreakKeyboard
+except Exception:  # fallback when executed directly from firmware/
+    import config  # type: ignore
+    from control.keyboard import CbreakKeyboard  # type: ignore
+
 # --------- Tunables ----------
 TICK_S           = 0.5   # discrete step duration
 FORWARD_SPD      = 0.40
@@ -376,19 +384,19 @@ def decide_next_motion(distance_cm: float, prev_motion: str) -> tuple[str, float
     Returns (next_motion, speed, notes)
     """
     if distance_cm == float('inf'):
-        return ("forward", FORWARD_SPD, "no-echo/open")
+        return ("forward", config.FORWARD_SPD, "no-echo/open")
 
-    if distance_cm <= STOP_CM:
+    if distance_cm <= config.STOP_CM:
         direction = random.choice(["left", "right"])
-        return (direction, TURN_SPD, f"obstacle@{distance_cm:.1f}cm")
+        return (direction, config.TURN_SPD, f"obstacle@{distance_cm:.1f}cm")
 
-    if distance_cm >= CLEAR_CM:
-        return ("forward", FORWARD_SPD, "clear")
+    if distance_cm >= config.CLEAR_CM:
+        return ("forward", config.FORWARD_SPD, "clear")
 
     if prev_motion in ("left", "right"):
-        return (prev_motion, TURN_SPD * 0.8, f"bias-{prev_motion}@{distance_cm:.1f}cm")
+        return (prev_motion, config.TURN_SPD * 0.8, f"bias-{prev_motion}@{distance_cm:.1f}cm")
 
-    return ("forward", FORWARD_SPD * 0.8, f"caution@{distance_cm:.1f}cm")
+    return ("forward", config.FORWARD_SPD * 0.8, f"caution@{distance_cm:.1f}cm")
 
 def main():
     # Serve dashboard from project root in background
@@ -397,12 +405,12 @@ def main():
     hub = None
     commands_q = None
     try:
-        server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", "8000")))
+        server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))))
     except Exception as e:
         print(f"[dashboard] failed to start HTTP server: {e}")
 
     robot = CamJamKitRobot()
-    sensor = PigpioUltrasonic(TRIG, ECHO, max_distance_m=MAX_DISTANCE_M, samples=SAMPLES_PER_READ)
+    sensor = PigpioUltrasonic(config.TRIG, config.ECHO, max_distance_m=config.MAX_DISTANCE_M, samples=config.SAMPLES_PER_READ)
 
     # CSV
     f = open(LOG_FILE, "w", newline="")
@@ -417,8 +425,8 @@ def main():
 
     # Controller state
     current_motion = "forward"
-    current_speed  = FORWARD_SPD
-    dist_hist = deque(maxlen=STUCK_STEPS)
+    current_speed  = config.FORWARD_SPD
+    dist_hist = deque(maxlen=config.STUCK_STEPS)
     stuck_cooldown = 0
     queued_moves = []  # (motion, speed, ticks_remaining)
 
@@ -453,9 +461,9 @@ def main():
                             queued_moves.append(("stop", 0.0, 1))
                     elif c in ('forward','backward','left','right'):
                         if manual_mode:
-                            speed = (FORWARD_SPD if c == "forward"
-                                     else BACK_SPD if c == "backward"
-                                     else TURN_SPD)
+                            speed = (config.FORWARD_SPD if c == "forward"
+                                     else config.BACK_SPD if c == "backward"
+                                     else config.TURN_SPD)
                             queued_moves.append((c, speed, 1))
 
             # Check keyboard events (once per tick)
@@ -477,9 +485,9 @@ def main():
                         queued_moves.clear()
                 elif kind == 'CMD' and manual_mode:
                     cmd = data
-                    speed = (FORWARD_SPD if cmd == "forward"
-                             else BACK_SPD if cmd == "backward"
-                             else TURN_SPD if cmd in ("left", "right")
+                    speed = (config.FORWARD_SPD if cmd == "forward"
+                             else config.BACK_SPD if cmd == "backward"
+                             else config.TURN_SPD if cmd in ("left", "right")
                              else 0.0)
                     queued_moves.append((cmd, speed, 1))
                     print(f"[manual cmd] {cmd}")
@@ -490,7 +498,7 @@ def main():
                     exec_motion, exec_speed, _ = queued_moves.pop(0)
                 else:
                     exec_motion, exec_speed = "stop", 0.0
-                execute_motion(robot, exec_motion, exec_speed, TICK_S)
+                execute_motion(robot, exec_motion, exec_speed, config.TICK_S)
                 d = sensor.distance_cm()
                 notes = "manual_cmd" if exec_motion != "stop" else "manual_idle"
                 next_motion, next_speed = ("manual", 0.0)
@@ -529,7 +537,7 @@ def main():
             else:
                 exec_motion, exec_speed = current_motion, current_speed
 
-            execute_motion(robot, exec_motion, exec_speed, TICK_S)
+            execute_motion(robot, exec_motion, exec_speed, config.TICK_S)
 
             # decrement macro ticks
             if queued_moves:
@@ -555,18 +563,18 @@ def main():
                 if stuck_cooldown > 0:
                     stuck_cooldown -= 1
                 else:
-                    if len(dist_hist) == STUCK_STEPS:
+                    if len(dist_hist) == config.STUCK_STEPS:
                         spread = max(dist_hist) - min(dist_hist)
-                        if spread < STUCK_DELTA_CM:
+                        if spread < config.STUCK_DELTA_CM:
                             turn_dir = random.choice(["left", "right"])
                             queued_moves = [
-                                ("backward", BACK_SPD, BACK_TICKS),
-                                (turn_dir,  TURN_SPD,  NUDGE_TICKS),
+                                ("backward", config.BACK_SPD, config.BACK_TICKS),
+                                (turn_dir,  config.TURN_SPD,  config.NUDGE_TICKS),
                             ]
-                            notes = f"STUCK: Δ={spread:.1f}cm/{STUCK_STEPS}steps -> back {BACK_TICKS} + {turn_dir} {NUDGE_TICKS}"
+                            notes = f"STUCK: Δ={spread:.1f}cm/{config.STUCK_STEPS}steps -> back {config.BACK_TICKS} + {turn_dir} {config.NUDGE_TICKS}"
                             stuck_triggered = 1
-                            stuck_cooldown = STUCK_COOLDOWN_STEPS
-                            next_motion, next_speed = ("forward", FORWARD_SPD)
+                            stuck_cooldown = config.STUCK_COOLDOWN_STEPS
+                            next_motion, next_speed = ("forward", config.FORWARD_SPD)
                             dist_hist.clear()
 
                 current_motion, current_speed = next_motion, next_speed
