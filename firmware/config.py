@@ -3,8 +3,8 @@
 # --------- Timing & Speeds ----------
 TICK_S           = 0.5   # discrete step duration (seconds)
 FORWARD_SPD      = 0.40
-TURN_SPD         = 0.40
-BACK_SPD         = 0.40
+TURN_SPD         = 0.2
+BACK_SPD         = 0.2
 
 # --------- Distance Heuristics ----------
 STOP_CM          = 15.0  # too close -> evasive turn
