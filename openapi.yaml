@@ -130,6 +130,51 @@ paths:
                     $ref: '#/components/schemas/ConfigMap'
                   effective:
                     $ref: '#/components/schemas/ConfigMap'
+              examples:
+                populated:
+                  summary: Example with overrides applied
+                  value:
+                    defaults:
+                      TICK_S: 0.5
+                      MOVE_TICK_S: 0.5
+                      TURN_TICK_S: 0.5
+                      FORWARD_SPD: 0.4
+                      TURN_SPD: 0.2
+                      BACK_SPD: 0.2
+                      STOP_CM: 15
+                      CLEAR_CM: 30
+                      MAX_DISTANCE_M: 2.5
+                      SAMPLES_PER_READ: 3
+                      STUCK_DELTA_CM: 5
+                      STUCK_STEPS: 4
+                      BACK_TICKS: 3
+                      NUDGE_TICKS: 1
+                      STUCK_COOLDOWN_STEPS: 4
+                      TRIG: 19
+                      ECHO: 26
+                      DASHBOARD_PORT: 8000
+                    overrides:
+                      FORWARD_SPD: 0.55
+                      TURN_TICK_S: 0.45
+                    effective:
+                      TICK_S: 0.5
+                      MOVE_TICK_S: 0.5
+                      TURN_TICK_S: 0.45
+                      FORWARD_SPD: 0.55
+                      TURN_SPD: 0.2
+                      BACK_SPD: 0.2
+                      STOP_CM: 15
+                      CLEAR_CM: 30
+                      MAX_DISTANCE_M: 2.5
+                      SAMPLES_PER_READ: 3
+                      STUCK_DELTA_CM: 5
+                      STUCK_STEPS: 4
+                      BACK_TICKS: 3
+                      NUDGE_TICKS: 1
+                      STUCK_COOLDOWN_STEPS: 4
+                      TRIG: 19
+                      ECHO: 26
+                      DASHBOARD_PORT: 8000
     patch:
       tags: [config]
       summary: Set overrides (uppercase keys only)
