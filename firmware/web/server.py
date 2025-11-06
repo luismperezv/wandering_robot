@@ -139,7 +139,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if not name:
                 self.send_response(400); self._set_cors(); self.end_headers(); return
             try:
-                self.commands.put_nowait({"type":"cmd","name":name,"speed":obj.get("speed"),"duration_ms":obj.get("duration_ms")})
+                self.commands.put_nowait({
+                    "type":"cmd",
+                    "name":name,
+                    "speed":obj.get("speed"),
+                    "duration_ms":obj.get("duration_ms"),
+                    "duration_s":obj.get("duration_s"),
+                })
             except Exception:
                 pass
             self.send_response(204); self._set_cors(); self.end_headers(); return

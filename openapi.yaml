@@ -51,6 +51,9 @@ paths:
                 duration_ms:
                   type: integer
                   minimum: 1
+                duration_s:
+                  type: number
+                  minimum: 0.001
       responses:
         '204': { description: Accepted }
         '400': { description: Bad request }
