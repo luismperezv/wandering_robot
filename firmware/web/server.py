@@ -129,6 +129,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        if parsed.path == "/api/docs":
+            html = (
+                "<!doctype html><html><head><meta charset='utf-8'/>"
+                "<title>Wandering Robot API Docs</title>"
+                "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
+                "<style>html,body,#redoc{height:100%;margin:0;background:#0f1220;color:#e9ecff}</style>"
+                "</head><body>"
+                "<redoc id='redoc' spec-url='/api/openapi.yaml'></redoc>"
+                "<script src='https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js'></script>"
+                "</body></html>"
+            ).encode("utf-8")
+            self.send_response(200)
+            self._set_cors()
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(html)
+            return
+
         return super().do_GET()
 
     def do_POST(self):
