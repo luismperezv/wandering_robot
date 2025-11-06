@@ -2,37 +2,85 @@ openapi: 3.1.0
 info:
   title: Wandering Robot API
   version: 0.1.0
+  description: |
+    HTTP+SSE API to control the robot, read status, and adjust runtime configuration.
+    
+    Conventions:
+    - Content type for JSON requests is `application/json`
+    - Durations in API can be provided as `duration_ms` (milliseconds) or `duration_s` (seconds)
+    - Speeds are 0..1 (unitless)
+    - Configuration values are in the same units as `firmware/config.py`
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: 192.168.0.228
+      port:
+        default: '8000'
+tags:
+  - name: status
+  - name: control
+  - name: config
+  - name: docs
 paths:
   /api/status:
     get:
+      tags: [status]
       summary: Get current status
+      description: Latest snapshot (mode, last executed motion/speed, distance, queue, log file, etc.).
       responses:
         '200':
-          description: Status
+          description: Status snapshot
           content:
             application/json:
               schema:
-                type: object
+                $ref: '#/components/schemas/Status'
+              examples:
+                example:
+                  summary: Typical AUTO snapshot
+                  value:
+                    mode: AUTO
+                    distance_cm: 42.1
+                    executed_motion: forward
+                    executed_speed: 0.4
+                    next_motion: forward
+                    next_speed: 0.4
+                    notes: cruising
+                    stuck: 0
+                    queue_len: 0
+                    log_file: runlog_20251106_101500.csv
   /api/mode:
     post:
+      tags: [control]
       summary: Set mode
+      description: Switch the controller into AUTO, MANUAL, or REMOTE. REMOTE idles until commands are received.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [mode]
-              properties:
-                mode:
-                  type: string
-                  enum: [AUTO, MANUAL, REMOTE]
+              $ref: '#/components/schemas/ModeRequest'
+            examples:
+              toRemote:
+                summary: Enter REMOTE
+                value: { mode: REMOTE }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  mode: { $ref: '#/components/schemas/Mode' }
         '400': { description: Bad request }
   /api/cmd:
     post:
+      tags: [control]
       summary: Send a movement command (REMOTE mode)
+      description: |
+        Executes a single motion step. Only effective while in REMOTE mode. If in other modes, the request is accepted but may be ignored.
       requestBody:
         required: true
         content:
@@ -54,11 +102,19 @@ paths:
                 duration_s:
                   type: number
                   minimum: 0.001
+            examples:
+              forward600ms:
+                summary: Forward for 600ms at 0.6 speed
+                value: { name: forward, speed: 0.6, duration_ms: 600 }
+              left0_4s:
+                summary: Left for 0.4 seconds (default turn speed)
+                value: { name: left, duration_s: 0.4 }
       responses:
         '204': { description: Accepted }
         '400': { description: Bad request }
   /api/config:
     get:
+      tags: [config]
       summary: Get defaults/overrides/effective config
       responses:
         '200':
@@ -75,6 +131,7 @@ paths:
                   effective:
                     $ref: '#/components/schemas/ConfigMap'
     patch:
+      tags: [config]
       summary: Set overrides (uppercase keys only)
       description: |
         Provide a JSON object of overrides for uppercase config keys. Only documented keys are accepted.
@@ -89,6 +146,20 @@ paths:
               properties:
                 overrides:
                   $ref: '#/components/schemas/ConfigOverrides'
+            examples:
+              speeds:
+                summary: Tune forward and turn speeds
+                value:
+                  overrides:
+                    FORWARD_SPD: 0.55
+                    TURN_SPD: 0.4
+              timings:
+                summary: Change tick durations
+                value:
+                  overrides:
+                    TICK_S: 0.6
+                    MOVE_TICK_S: 0.6
+                    TURN_TICK_S: 0.45
       responses:
         '200':
           description: OK
@@ -107,14 +178,45 @@ paths:
                     $ref: '#/components/schemas/ConfigMap'
   /api/config/overrides:
     delete:
+      tags: [config]
       summary: Clear overrides
       responses:
         '204': { description: OK }
   /events:
     get:
+      tags: [status]
       summary: Server Sent Events stream
+      description: |
+        Text/event-stream of JSON lines suitable for EventSource clients. Includes state snapshots and log lines.
+        Content type is `text/event-stream`.
       responses:
-        '200': { description: SSE stream }
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stateLine:
+                  summary: Example event payload (data field only)
+                  value: '{"mode":"AUTO","distance_cm":42.1,...}'
+  /api/openapi.yaml:
+    get:
+      tags: [docs]
+      summary: OpenAPI document (YAML)
+      responses:
+        '200':
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/docs:
+    get:
+      tags: [docs]
+      summary: Rendered API documentation (Redoc)
+      responses:
+        '200': { description: HTML page }
 
 components:
   schemas:
@@ -208,5 +310,37 @@ components:
           maximum: 65535
           description: Dashboard HTTP port
           example: 8000
+    Mode:
+      type: string
+      enum: [AUTO, MANUAL, REMOTE]
+    ModeRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/Mode' }
+    Status:
+      type: object
+      properties:
+        mode: { $ref: '#/components/schemas/Mode' }
+        distance_cm:
+          type: number
+          nullable: true
+        executed_motion:
+          type: string
+          enum: [forward, backward, left, right, stop, manual, remote]
+        executed_speed:
+          type: number
+        next_motion:
+          type: string
+        next_speed:
+          type: number
+        notes:
+          type: string
+        stuck:
+          type: integer
+        queue_len:
+          type: integer
+        log_file:
+          type: string
 
 
