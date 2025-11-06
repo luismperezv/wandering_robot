@@ -2,6 +2,9 @@
 
 # --------- Timing & Speeds ----------
 TICK_S           = 0.5   # discrete step duration (seconds)
+# Independent per-motion step durations
+MOVE_TICK_S      = 0.5   # forward/backward step duration (seconds)
+TURN_TICK_S      = 0.5   # left/right step duration (seconds)
 FORWARD_SPD      = 0.40
 TURN_SPD         = 0.2
 BACK_SPD         = 0.2

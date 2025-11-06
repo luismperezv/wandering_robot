@@ -103,7 +103,7 @@ class Controller:
                         exec_motion, exec_speed, _ = self.queued_moves.pop(0)
                     else:
                         exec_motion, exec_speed = "stop", 0.0
-                    execute_motion(self.robot, exec_motion, exec_speed, config.TICK_S)
+                    execute_motion(self.robot, exec_motion, exec_speed, self._duration_for_motion(exec_motion))
                     d = self.sensor.distance_cm()
                     notes = "manual_cmd" if exec_motion != "stop" else "manual_idle"
                     next_motion, next_speed = ("manual", 0.0)
@@ -131,7 +131,7 @@ class Controller:
                 else:
                     exec_motion, exec_speed = self.current_motion, self.current_speed
 
-                execute_motion(self.robot, exec_motion, exec_speed, config.TICK_S)
+                execute_motion(self.robot, exec_motion, exec_speed, self._duration_for_motion(exec_motion))
 
                 # decrement macro ticks
                 if self.queued_moves:
@@ -195,5 +195,11 @@ class Controller:
                 self.sensor.close()
             except Exception:
                 pass
+
+    def _duration_for_motion(self, motion: str) -> float:
+        if motion in ("left", "right"):
+            return getattr(config, "TURN_TICK_S", config.TICK_S)
+        else:
+            return getattr(config, "MOVE_TICK_S", config.TICK_S)
 
 
