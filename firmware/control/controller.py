@@ -88,6 +88,20 @@ class Controller:
                                 speed = c.get("speed")
                                 duration_ms = c.get("duration_ms")
                                 duration_s_req = c.get("duration_s")
+                                # handle toggle/auto from API cmd to preserve legacy behavior
+                                if name == 'toggle':
+                                    self.manual_mode = not self.manual_mode
+                                    self.remote_mode = False
+                                    self.robot.stop()
+                                    if self.manual_mode:
+                                        self.queued_moves.clear()
+                                    continue
+                                if name == 'auto':
+                                    self.manual_mode = False
+                                    self.remote_mode = False
+                                    self.robot.stop()
+                                    self.queued_moves.clear()
+                                    continue
                                 if self.remote_mode and name in ("forward","backward","left","right","stop"):
                                     if speed is None:
                                         if name == "forward":
