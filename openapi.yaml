@@ -61,9 +61,25 @@ paths:
     get:
       summary: Get defaults/overrides/effective config
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  defaults:
+                    $ref: '#/components/schemas/ConfigMap'
+                  overrides:
+                    $ref: '#/components/schemas/ConfigMap'
+                  effective:
+                    $ref: '#/components/schemas/ConfigMap'
     patch:
       summary: Set overrides (uppercase keys only)
+      description: |
+        Provide a JSON object of overrides for uppercase config keys. Only documented keys are accepted.
+        Values are validated for type and reasonable bounds. Unknown keys are ignored.
+        The resulting `effective` map applies `overrides` on top of `defaults`.
       requestBody:
         required: true
         content:
@@ -72,9 +88,23 @@ paths:
               type: object
               properties:
                 overrides:
-                  type: object
+                  $ref: '#/components/schemas/ConfigOverrides'
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  defaults:
+                    $ref: '#/components/schemas/ConfigMap'
+                  overrides:
+                    $ref: '#/components/schemas/ConfigMap'
+                  effective:
+                    $ref: '#/components/schemas/ConfigMap'
   /api/config/overrides:
     delete:
       summary: Clear overrides
@@ -85,5 +115,98 @@ paths:
       summary: Server Sent Events stream
       responses:
         '200': { description: SSE stream }
+
+components:
+  schemas:
+    ConfigMap:
+      type: object
+      additionalProperties: true
+      description: Map of configuration keys to values.
+    ConfigOverrides:
+      type: object
+      additionalProperties: false
+      description: Allowed override keys and their types.
+      properties:
+        # Timing & Speeds (seconds and unitless speeds 0..1)
+        TICK_S:
+          type: number
+          description: Discrete step duration (seconds)
+          example: 0.5
+        MOVE_TICK_S:
+          type: number
+          description: Forward/backward step duration (seconds)
+          example: 0.5
+        TURN_TICK_S:
+          type: number
+          description: Left/right step duration (seconds)
+          example: 0.5
+        FORWARD_SPD:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Forward speed (0..1)
+          example: 0.4
+        TURN_SPD:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Turn speed (0..1)
+          example: 0.2
+        BACK_SPD:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Backward speed (0..1)
+          example: 0.2
+        # Distance Heuristics
+        STOP_CM:
+          type: number
+          description: Distance threshold to consider too close (cm)
+          example: 15
+        CLEAR_CM:
+          type: number
+          description: Distance threshold considered clear (cm)
+          example: 30
+        MAX_DISTANCE_M:
+          type: number
+          description: Maximum measurable distance (meters)
+          example: 2.5
+        SAMPLES_PER_READ:
+          type: integer
+          minimum: 1
+          description: Sensor samples per measurement
+          example: 3
+        # Stuck detection
+        STUCK_DELTA_CM:
+          type: number
+          description: Min spread across last steps to avoid stuck (cm)
+          example: 5
+        STUCK_STEPS:
+          type: integer
+          minimum: 1
+          description: Window length for stuck detection (ticks)
+          example: 4
+        BACK_TICKS:
+          type: integer
+          minimum: 0
+          description: Number of ticks to back up when stuck
+          example: 3
+        NUDGE_TICKS:
+          type: integer
+          minimum: 0
+          description: Number of ticks to turn after backing up
+          example: 1
+        STUCK_COOLDOWN_STEPS:
+          type: integer
+          minimum: 0
+          description: Cooldown ticks after stuck routine
+          example: 4
+        # Web/IO (advanced)
+        DASHBOARD_PORT:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: Dashboard HTTP port
+          example: 8000
 
 
