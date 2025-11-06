@@ -76,6 +76,9 @@ class Controller:
                                 self.queued_moves.clear()
                                 self.manual_mode = (mode == "MANUAL")
                                 self.remote_mode = (mode == "REMOTE")
+                                if self.remote_mode:
+                                    # enter remote idle
+                                    self.current_motion, self.current_speed = "stop", 0.0
                             elif c.get("type") == "cmd":
                                 name = c.get("name")
                                 speed = c.get("speed")
@@ -132,6 +135,39 @@ class Controller:
                                    else config.TURN_SPD if cmd in ("left", "right")
                                    else 0.0)
                             self.queued_moves.append((cmd, spd, 1))
+
+                # If in REMOTE mode and no immediate remote command is running, idle (no motion)
+                if self.remote_mode:
+                    d = self.sensor.distance_cm()
+                    notes = "remote_idle"
+                    self._broadcast({
+                        "mode": "REMOTE",
+                        "distance_cm": (None if d == float('inf') else round(d,2)),
+                        "executed_motion": "stop",
+                        "executed_speed": 0.0,
+                        "next_motion": "remote",
+                        "next_speed": 0.0,
+                        "notes": notes,
+                        "stuck": 0,
+                        "queue_len": 0,
+                        "log_file": self.log_file,
+                    })
+                    try:
+                        self.hub.set_state({
+                            "mode": "REMOTE",
+                            "distance_cm": (None if d == float('inf') else round(d,2)),
+                            "executed_motion": "stop",
+                            "executed_speed": 0.0,
+                            "next_motion": "remote",
+                            "next_speed": 0.0,
+                            "notes": notes,
+                            "stuck": 0,
+                            "queue_len": 0,
+                            "log_file": self.log_file,
+                        })
+                    except Exception:
+                        pass
+                    continue
 
                 # Manual branch executes and emits
                 if self.manual_mode:
