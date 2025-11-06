@@ -134,10 +134,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "<!doctype html><html><head><meta charset='utf-8'/>"
                 "<title>Wandering Robot API Docs</title>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
-                "<style>html,body,#redoc{height:100%;margin:0;background:#0f1220;color:#e9ecff}</style>"
+                "<style>html,body,#redoc{height:100%;margin:0;background:#ffffff;color:#1b1f23;font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial}</style>"
                 "</head><body>"
-                "<redoc id='redoc' spec-url='/api/openapi.yaml'></redoc>"
+                "<div id='redoc'></div>"
                 "<script src='https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js'></script>"
+                "<script>Redoc.init('/api/openapi.yaml', {theme: {colors: {primary: {main: '#1f6feb'}}, typography: {fontSize: '14px', lineHeight: '1.5'}}}, document.getElementById('redoc'));</script>"
                 "</body></html>"
             ).encode("utf-8")
             self.send_response(200)
