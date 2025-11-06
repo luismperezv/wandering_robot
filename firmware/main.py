@@ -11,12 +11,14 @@ try:
     from firmware.web.server import start_dashboard_server
     from firmware.control.keyboard import CbreakKeyboard
     from firmware.control.controller import Controller
+    from firmware.config_manager import ConfigManager
 except Exception:
     import config  # type: ignore
     from hardware.ultrasonic import PigpioUltrasonic  # type: ignore
     from web.server import start_dashboard_server  # type: ignore
     from control.keyboard import CbreakKeyboard  # type: ignore
     from control.controller import Controller  # type: ignore
+    from config_manager import ConfigManager  # type: ignore
 
 
 def main():
@@ -24,8 +26,10 @@ def main():
     server = None
     hub = None
     commands_q = None
+    overrides_path = os.path.join(project_root, "firmware", "config_overrides.json")
+    cfg_mgr = ConfigManager(config, overrides_path)
     try:
-        server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))))
+        server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))), config_manager=cfg_mgr)
     except Exception as e:
         print(f"[dashboard] failed to start HTTP server: {e}")
 
@@ -61,7 +65,7 @@ def main():
     print("Controls: Enter=toggle MANUAL, WASD=drive. Ctrl+C to quit.")
     print(f"Logging to {log_file}.")
 
-    controller = Controller(robot, sensor, write_row, hub, commands_q, keyboard=kb, log_file=log_file)
+    controller = Controller(robot, sensor, write_row, hub, commands_q, keyboard=kb, log_file=log_file, config_manager=cfg_mgr)
     try:
         controller.run()
     except KeyboardInterrupt:

@@ -5,9 +5,11 @@ from collections import deque
 try:
     from firmware import config
     from firmware.control.policy import decide_next_motion
+    from firmware.config_manager import ConfigManager
 except Exception:
     import config  # type: ignore
     from control.policy import decide_next_motion  # type: ignore
+    from config_manager import ConfigManager  # type: ignore
 
 
 def execute_motion(robot, motion: str, speed: float, duration: float):
@@ -27,7 +29,7 @@ def execute_motion(robot, motion: str, speed: float, duration: float):
 
 
 class Controller:
-    def __init__(self, robot, sensor, logger_writer, hub, commands_q, keyboard=None, log_file="runlog.csv"):
+    def __init__(self, robot, sensor, logger_writer, hub, commands_q, keyboard=None, log_file="runlog.csv", config_manager: "ConfigManager | None" = None):
         self.robot = robot
         self.sensor = sensor
         self.writer = logger_writer
@@ -35,6 +37,7 @@ class Controller:
         self.commands_q = commands_q
         self.keyboard = keyboard
         self.log_file = log_file
+        self.cfg = config_manager
 
         self.current_motion = "forward"
         self.current_speed = config.FORWARD_SPD
@@ -42,6 +45,12 @@ class Controller:
         self.stuck_cooldown = 0
         self.queued_moves = []  # (motion, speed, ticks_remaining)
         self.manual_mode = False
+        self.remote_mode = False
+
+    def _cfg(self, key, default):
+        if self.cfg is not None:
+            return self.cfg.get(key, default)
+        return getattr(config, key, default)
 
     def _broadcast(self, msg: dict):
         try:
@@ -59,25 +68,52 @@ class Controller:
                             c = self.commands_q.get_nowait()
                         except Exception:
                             break
-                        if c == 'toggle':
-                            self.manual_mode = not self.manual_mode
-                            self.robot.stop()
-                            if self.manual_mode:
+                        # New dict-based commands
+                        if isinstance(c, dict):
+                            if c.get("type") == "mode":
+                                mode = c.get("mode")
+                                self.robot.stop()
                                 self.queued_moves.clear()
-                        elif c == 'auto':
-                            self.manual_mode = False
-                            self.robot.stop()
-                            self.queued_moves.clear()
-                        elif c == 'stop':
-                            if self.manual_mode:
+                                self.manual_mode = (mode == "MANUAL")
+                                self.remote_mode = (mode == "REMOTE")
+                            elif c.get("type") == "cmd":
+                                name = c.get("name")
+                                speed = c.get("speed")
+                                duration_ms = c.get("duration_ms")
+                                if self.remote_mode and name in ("forward","backward","left","right","stop"):
+                                    if speed is None:
+                                        if name == "forward":
+                                            speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
+                                        elif name == "backward":
+                                            speed = float(self._cfg("BACK_SPD", config.BACK_SPD))
+                                        else:
+                                            speed = float(self._cfg("TURN_SPD", config.TURN_SPD))
+                                    duration_s = (float(duration_ms)/1000.0) if duration_ms else float(self._cfg("TICK_S", config.TICK_S))
+                                    execute_motion(self.robot, name, float(speed), duration_s)
+                                # ignore if not in REMOTE
+                        else:
+                            # Legacy string commands from dashboard keyboard
+                            if c == 'toggle':
+                                self.manual_mode = not self.manual_mode
+                                self.remote_mode = False
+                                self.robot.stop()
+                                if self.manual_mode:
+                                    self.queued_moves.clear()
+                            elif c == 'auto':
+                                self.manual_mode = False
+                                self.remote_mode = False
+                                self.robot.stop()
                                 self.queued_moves.clear()
-                                self.queued_moves.append(("stop", 0.0, 1))
-                        elif c in ('forward','backward','left','right'):
-                            if self.manual_mode:
-                                spd = (config.FORWARD_SPD if c == "forward"
-                                       else config.BACK_SPD if c == "backward"
-                                       else config.TURN_SPD)
-                                self.queued_moves.append((c, spd, 1))
+                            elif c == 'stop':
+                                if self.manual_mode:
+                                    self.queued_moves.clear()
+                                    self.queued_moves.append(("stop", 0.0, 1))
+                            elif c in ('forward','backward','left','right'):
+                                if self.manual_mode:
+                                    spd = (self._cfg("FORWARD_SPD", config.FORWARD_SPD) if c == "forward"
+                                           else self._cfg("BACK_SPD", config.BACK_SPD) if c == "backward"
+                                           else self._cfg("TURN_SPD", config.TURN_SPD))
+                                    self.queued_moves.append((c, float(spd), 1))
 
                 # Keyboard
                 if self.keyboard is not None:
@@ -161,13 +197,13 @@ class Controller:
                                 import random
                                 turn_dir = random.choice(["left", "right"])
                                 self.queued_moves = [
-                                    ("backward", config.BACK_SPD, config.BACK_TICKS),
-                                    (turn_dir,  config.TURN_SPD,  config.NUDGE_TICKS),
+                                    ("backward", self._cfg("BACK_SPD", config.BACK_SPD), self._cfg("BACK_TICKS", config.BACK_TICKS)),
+                                    (turn_dir,  self._cfg("TURN_SPD", config.TURN_SPD),  self._cfg("NUDGE_TICKS", config.NUDGE_TICKS)),
                                 ]
                                 notes = f"STUCK: Δ={spread:.1f}cm/{config.STUCK_STEPS}steps -> back {config.BACK_TICKS} + {turn_dir} {config.NUDGE_TICKS}"
                                 stuck_triggered = 1
-                                self.stuck_cooldown = config.STUCK_COOLDOWN_STEPS
-                                next_motion, next_speed = ("forward", config.FORWARD_SPD)
+                                self.stuck_cooldown = self._cfg("STUCK_COOLDOWN_STEPS", config.STUCK_COOLDOWN_STEPS)
+                                next_motion, next_speed = ("forward", self._cfg("FORWARD_SPD", config.FORWARD_SPD))
                                 self.dist_hist.clear()
                     self.current_motion, self.current_speed = next_motion, next_speed
 
@@ -175,7 +211,7 @@ class Controller:
                 self.writer(["AUTO", d, exec_motion, exec_speed, (self.queued_moves[0][0] if self.queued_moves else self.current_motion), (self.queued_moves[0][1] if self.queued_moves else self.current_speed), notes, stuck_triggered, len(self.queued_moves)])
                 # broadcast
                 self._broadcast({
-                    "mode": "AUTO",
+                    "mode": ("REMOTE" if self.remote_mode else "MANUAL" if self.manual_mode else "AUTO"),
                     "distance_cm": (None if d == float('inf') else round(d,2)),
                     "executed_motion": exec_motion,
                     "executed_speed": round(exec_speed,2),
@@ -186,6 +222,22 @@ class Controller:
                     "queue_len": len(self.queued_moves),
                     "log_file": self.log_file,
                 })
+                # status snapshot for /api/status
+                try:
+                    self.hub.set_state({
+                        "mode": ("REMOTE" if self.remote_mode else "MANUAL" if self.manual_mode else "AUTO"),
+                        "distance_cm": (None if d == float('inf') else round(d,2)),
+                        "executed_motion": exec_motion,
+                        "executed_speed": round(exec_speed,2),
+                        "next_motion": (self.queued_moves[0][0] if self.queued_moves else self.current_motion),
+                        "next_speed": (self.queued_moves[0][1] if self.queued_moves else self.current_speed),
+                        "notes": notes,
+                        "stuck": stuck_triggered,
+                        "queue_len": len(self.queued_moves),
+                        "log_file": self.log_file,
+                    })
+                except Exception:
+                    pass
         finally:
             try:
                 self.robot.stop()
@@ -198,8 +250,8 @@ class Controller:
 
     def _duration_for_motion(self, motion: str) -> float:
         if motion in ("left", "right"):
-            return getattr(config, "TURN_TICK_S", config.TICK_S)
+            return getattr(config, "TURN_TICK_S", self._cfg("TICK_S", config.TICK_S))
         else:
-            return getattr(config, "MOVE_TICK_S", config.TICK_S)
+            return getattr(config, "MOVE_TICK_S", self._cfg("TICK_S", config.TICK_S))
 
 

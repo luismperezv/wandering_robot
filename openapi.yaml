@@ -1,0 +1,86 @@
+openapi: 3.1.0
+info:
+  title: Wandering Robot API
+  version: 0.1.0
+paths:
+  /api/status:
+    get:
+      summary: Get current status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+  /api/mode:
+    post:
+      summary: Set mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [AUTO, MANUAL, REMOTE]
+      responses:
+        '200': { description: OK }
+        '400': { description: Bad request }
+  /api/cmd:
+    post:
+      summary: Send a movement command (REMOTE mode)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  enum: [forward, backward, left, right, stop]
+                speed:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                duration_ms:
+                  type: integer
+                  minimum: 1
+      responses:
+        '204': { description: Accepted }
+        '400': { description: Bad request }
+  /api/config:
+    get:
+      summary: Get defaults/overrides/effective config
+      responses:
+        '200': { description: OK }
+    patch:
+      summary: Set overrides (uppercase keys only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrides:
+                  type: object
+      responses:
+        '200': { description: OK }
+  /api/config/overrides:
+    delete:
+      summary: Clear overrides
+      responses:
+        '204': { description: OK }
+  /events:
+    get:
+      summary: Server Sent Events stream
+      responses:
+        '200': { description: SSE stream }
+
+
