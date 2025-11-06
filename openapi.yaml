@@ -228,6 +228,75 @@ paths:
       responses:
         '204': { description: OK }
   /events:
+  /api/policy:
+    get:
+      tags: [control]
+      summary: Get movement policy status
+      responses:
+        '200':
+          description: Current policy status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string, enum: [default, custom] }
+                  has_custom: { type: boolean }
+                  error: { type: string, nullable: true }
+              examples:
+                default:
+                  value: { name: default, has_custom: false, error: null }
+                custom_ok:
+                  value: { name: custom, has_custom: true, error: null }
+                custom_error:
+                  value: { name: default, has_custom: true, error: "load_error: ..." }
+
+  /api/policy/code:
+    put:
+      tags: [control]
+      summary: Upload custom movement policy code
+      description: |
+        Provide Python source with a function:
+        `decide_next_motion(distance_cm: float, current_motion: str) -> (next_motion: str, next_speed: float, notes: str)`.
+        On success, the custom policy becomes active; on failure, the default policy remains active and `error` is populated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+            examples:
+              simple:
+                summary: Minimal custom policy
+                value:
+                  code: |
+                    def decide_next_motion(distance_cm, current_motion):
+                        if distance_cm is not None and distance_cm < 20:
+                            return ("right", 0.3, "custom: avoid close obstacle")
+                        return ("forward", 0.5, "custom: cruise")
+      responses:
+        '200':
+          description: Custom policy accepted or default retained with error set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  name: { type: string, enum: [default, custom] }
+                  has_custom: { type: boolean }
+                  error: { type: string, nullable: true }
+        '400': { description: Bad request }
+        '500': { description: Failed to save or load policy }
+    delete:
+      tags: [control]
+      summary: Revert to default policy
+      responses:
+        '204': { description: OK }
     get:
       tags: [status]
       summary: Server Sent Events stream

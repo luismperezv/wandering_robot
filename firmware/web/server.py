@@ -33,6 +33,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     commands: "queue.Queue[object]" = None
     config_manager = None
     allow_cors_all: bool = True
+    policy_manager = None
 
     def log_message(self, format, *args):
         return
@@ -112,6 +113,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(snap).encode("utf-8"))
             return
 
+        if parsed.path == "/api/policy":
+            self.send_response(200)
+            self._set_cors()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            status = self.policy_manager.status() if self.policy_manager else {"name": "default"}
+            self.wfile.write(json.dumps(status).encode("utf-8"))
+            return
+
         if parsed.path == "/api/openapi.yaml":
             root = self.directory  # type: ignore[attr-defined]
             path = os.path.join(root, "openapi.yaml")
@@ -184,6 +194,26 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         self.send_response(404); self._set_cors(); self.end_headers()
 
+    def do_PUT(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/policy/code":
+            obj = self._read_json() or {}
+            code = obj.get("code")
+            if not isinstance(code, str):
+                self.send_response(400); self._set_cors(); self.end_headers(); return
+            try:
+                if self.policy_manager:
+                    self.policy_manager.set_code(code)
+                self.send_response(200); self._set_cors(); self.send_header("Content-Type","application/json"); self.end_headers()
+                status = self.policy_manager.status() if self.policy_manager else {"name": "default"}
+                payload = {"ok": True}
+                payload.update(status)
+                self.wfile.write(json.dumps(payload).encode("utf-8"))
+            except Exception:
+                self.send_response(500); self._set_cors(); self.end_headers()
+            return
+        self.send_response(404); self._set_cors(); self.end_headers()
+
     def do_PATCH(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/config":
@@ -201,6 +231,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_DELETE(self):
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/policy/code":
+            if self.policy_manager:
+                self.policy_manager.delete_custom()
+            self.send_response(204); self._set_cors(); self.end_headers(); return
         if parsed.path == "/api/config/overrides":
             if self.config_manager:
                 self.config_manager.clear_overrides()
@@ -208,7 +242,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(404); self._set_cors(); self.end_headers()
 
 
-def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None):
+def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None):
     hub = DashboardHub()
     commands_q: "queue.Queue[object]" = queue.Queue()
     handler_cls = partial(DashboardHandler, directory=root_dir)
@@ -221,6 +255,7 @@ def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None)
     DashboardHandler.hub = hub
     DashboardHandler.commands = commands_q
     DashboardHandler.config_manager = config_manager
+    DashboardHandler.policy_manager = policy_manager
 
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()

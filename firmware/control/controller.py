@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 import json
 from collections import deque
@@ -6,10 +7,12 @@ try:
     from firmware import config
     from firmware.control.policy import decide_next_motion
     from firmware.config_manager import ConfigManager
+    from firmware.policy_manager import PolicyManager
 except Exception:
     import config  # type: ignore
     from control.policy import decide_next_motion  # type: ignore
     from config_manager import ConfigManager  # type: ignore
+    from policy_manager import PolicyManager  # type: ignore
 
 
 def execute_motion(robot, motion: str, speed: float, duration: float):
@@ -29,7 +32,7 @@ def execute_motion(robot, motion: str, speed: float, duration: float):
 
 
 class Controller:
-    def __init__(self, robot, sensor, logger_writer, hub, commands_q, keyboard=None, log_file="runlog.csv", config_manager: "ConfigManager | None" = None):
+    def __init__(self, robot, sensor, logger_writer, hub, commands_q, keyboard=None, log_file="runlog.csv", config_manager: "ConfigManager | None" = None, policy_manager: "PolicyManager | None" = None):
         self.robot = robot
         self.sensor = sensor
         self.writer = logger_writer
@@ -38,6 +41,7 @@ class Controller:
         self.keyboard = keyboard
         self.log_file = log_file
         self.cfg = config_manager
+        self.policy = policy_manager
 
         self.current_motion = "forward"
         self.current_speed = config.FORWARD_SPD
@@ -122,24 +126,6 @@ class Controller:
                                            else self._cfg("BACK_SPD", config.BACK_SPD) if c == "backward"
                                            else self._cfg("TURN_SPD", config.TURN_SPD))
                                     self.queued_moves.append((c, float(spd), 1))
-
-                # Keyboard
-                if self.keyboard is not None:
-                    ev = self.keyboard.pop_event()
-                    if ev:
-                        kind, data = ev
-                        if kind == 'TOGGLE':
-                            self.manual_mode = not self.manual_mode
-                            self.robot.stop()
-                            if self.manual_mode:
-                                self.queued_moves.clear()
-                        elif kind == 'CMD' and self.manual_mode:
-                            cmd = data
-                            spd = (config.FORWARD_SPD if cmd == "forward"
-                                   else config.BACK_SPD if cmd == "backward"
-                                   else config.TURN_SPD if cmd in ("left", "right")
-                                   else 0.0)
-                            self.queued_moves.append((cmd, spd, 1))
 
                 # If in REMOTE mode and no immediate remote command is running, idle (no motion)
                 if self.remote_mode:
@@ -228,7 +214,10 @@ class Controller:
                 notes = ""
                 stuck_triggered = 0
                 if not self.queued_moves:
-                    next_motion, next_speed, notes = decide_next_motion(d, exec_motion)
+                    if self.policy is not None:
+                        next_motion, next_speed, notes = self.policy.decide_next_motion(d, exec_motion)
+                    else:
+                        next_motion, next_speed, notes = decide_next_motion(d, exec_motion)
                     if self.stuck_cooldown > 0:
                         self.stuck_cooldown -= 1
                     else:
