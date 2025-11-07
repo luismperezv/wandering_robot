@@ -57,6 +57,10 @@ class Controller:
 
     def _broadcast(self, msg: dict):
         try:
+            # Ensure mode is set correctly based on auto_mode
+            if 'mode' not in msg:
+                msg = msg.copy()  # Don't modify the original
+                msg['mode'] = 'AUTO' if self.auto_mode else 'REMOTE'
             self.hub.broadcast(json.dumps(msg))
         except Exception:
             pass
