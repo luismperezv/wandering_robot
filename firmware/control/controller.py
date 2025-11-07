@@ -94,8 +94,7 @@ class Controller:
                                     self.queued_moves.clear()
                                     continue
                                 if name == 'auto':
-                                    self.manual_mode = False
-                                    self.remote_mode = False
+                                    self.auto_mode = True
                                     self.robot.stop()
                                     self.queued_moves.clear()
                                     continue
@@ -250,8 +249,8 @@ class Controller:
                 # log
                 self.writer(["AUTO", d, exec_motion, exec_speed, (self.queued_moves[0][0] if self.queued_moves else self.current_motion), (self.queued_moves[0][1] if self.queued_moves else self.current_speed), notes, stuck_triggered, len(self.queued_moves)])
                 # broadcast
+                # Let _broadcast handle the mode based on auto_mode
                 self._broadcast({
-                    "mode": ("REMOTE" if self.remote_mode else "MANUAL" if self.manual_mode else "AUTO"),
                     "distance_cm": (None if d == float('inf') else round(d,2)),
                     "executed_motion": exec_motion,
                     "executed_speed": round(exec_speed,2),
