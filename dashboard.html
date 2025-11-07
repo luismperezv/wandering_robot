@@ -755,10 +755,9 @@
     // Reset all overrides
     async function resetOverrides() {
       try {
-        const response = await fetch('/api/config', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ overrides: {} })
+        const response = await fetch('/api/config/overrides', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' }
         });
         
         if (!response.ok) throw new Error('Failed to reset overrides');
