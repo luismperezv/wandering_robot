@@ -363,7 +363,15 @@
       appendLog(`MODE -> ${mode}`);
       els.explain.textContent = (mode === 'AUTO')
         ? 'Autonomous navigation: evaluating distance and stuck heuristics.'
-        : 'Manual control: use W/A/S/D or buttons to command one-tick moves.';
+        : 'Remote control: use buttons or send commands to control the robot.';
+      
+      // Update button states
+      const isRemote = (mode === 'REMOTE');
+      els.btns.fwd.disabled = !isRemote;
+      els.btns.left.disabled = !isRemote;
+      els.btns.right.disabled = !isRemote;
+      els.btns.back.disabled = !isRemote;
+      els.btns.stop.disabled = false; // Always enable stop
     }
 
     function setMotion(motion, speed) {
@@ -440,7 +448,12 @@
     }
 
     // Controls wired to backend
-    els.btns.toggle.onclick = () => sendCmd('toggle');
+    els.btns.toggle.onclick = () => {
+      const newMode = state.mode === 'AUTO' ? 'REMOTE' : 'AUTO';
+      setMode(newMode);
+      sendCmd('toggle');
+    };
+    
     els.btns.stop.onclick = () => sendCmd('stop');
     els.btns.fwd.onclick = () => sendCmd('forward');
     els.btns.left.onclick = () => sendCmd('left');
@@ -483,6 +496,12 @@
     // Initialize
     els.cardLog.textContent = state.logFile;
     setMode('AUTO');
+    
+    // Initialize button states
+    els.btns.fwd.disabled = true;
+    els.btns.left.disabled = true;
+    els.btns.right.disabled = true;
+    els.btns.back.disabled = true;
     setMotion('stop', 0.00);
     setDistance(Infinity);
     setQueue(0);
