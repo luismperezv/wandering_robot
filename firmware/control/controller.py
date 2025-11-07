@@ -264,7 +264,7 @@ class Controller:
                 # status snapshot for /api/status
                 try:
                     self.hub.set_state({
-                        "mode": ("REMOTE" if self.remote_mode else "MANUAL" if self.manual_mode else "AUTO"),
+                        "mode": "AUTO" if self.auto_mode else "REMOTE",
                         "distance_cm": (None if d == float('inf') else round(d,2)),
                         "executed_motion": exec_motion,
                         "executed_speed": round(exec_speed,2),
