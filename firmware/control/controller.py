@@ -48,8 +48,7 @@ class Controller:
         self.dist_hist = deque(maxlen=config.STUCK_STEPS)
         self.stuck_cooldown = 0
         self.queued_moves = []  # (motion, speed, ticks_remaining)
-        self.manual_mode = False
-        self.remote_mode = False
+        self.auto_mode = True  # True = AUTO mode, False = REMOTE mode
 
     def _cfg(self, key, default):
         if self.cfg is not None:
@@ -78,35 +77,17 @@ class Controller:
                                 mode = c.get("mode")
                                 self.robot.stop()
                                 self.queued_moves.clear()
-                                self.manual_mode = (mode == "MANUAL")
-                                self.remote_mode = (mode == "REMOTE")
-                                if self.remote_mode:
-                                    # enter remote idle
-                                    self.current_motion, self.current_speed = "stop", 0.0
+                                self.auto_mode = (mode == "AUTO")
                             elif c.get("type") == "cmd":
                                 name = c.get("name")
                                 speed = c.get("speed")
                                 duration_ms = c.get("duration_ms")
                                 duration_s_req = c.get("duration_s")
-                                # handle toggle/auto from API cmd to preserve legacy behavior
+                                # Toggle between AUTO and REMOTE modes
                                 if name == 'toggle':
-                                    if self.manual_mode:
-                                        # Toggle from MANUAL to AUTO
-                                        self.manual_mode = False
-                                        self.remote_mode = False
-                                        self.robot.stop()
-                                        self.queued_moves.clear()
-                                    elif self.remote_mode:
-                                        # Toggle from REMOTE to AUTO
-                                        self.manual_mode = False
-                                        self.remote_mode = False
-                                        self.robot.stop()
-                                    else:
-                                        # Toggle from AUTO to MANUAL
-                                        self.manual_mode = True
-                                        self.remote_mode = False
-                                        self.robot.stop()
-                                        self.queued_moves.clear()
+                                    self.auto_mode = not self.auto_mode
+                                    self.robot.stop()
+                                    self.queued_moves.clear()
                                     continue
                                 if name == 'auto':
                                     self.manual_mode = False
@@ -114,14 +95,8 @@ class Controller:
                                     self.robot.stop()
                                     self.queued_moves.clear()
                                     continue
-                                # For manual control commands, ensure we're in MANUAL mode
-                                if name in ("forward", "backward", "left", "right", "stop"):
-                                    if not self.manual_mode:
-                                        # If we get a manual command but we're not in manual mode, switch to manual mode
-                                        self.manual_mode = True
-                                        self.remote_mode = False
-                                        self.queued_moves.clear()
-                                    
+                                # Handle movement commands in REMOTE mode
+                                if not self.auto_mode and name in ("forward", "backward", "left", "right", "stop"):
                                     if speed is None:
                                         if name == "forward":
                                             speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
@@ -136,112 +111,86 @@ class Controller:
                                         else float(self._cfg("TICK_S", config.TICK_S))
                                     )
                                     
-                                    # If in manual mode, queue the move
-                                    if self.manual_mode:
-                                        if name == 'stop':
-                                            self.queued_moves.clear()
-                                            self.queued_moves.append(("stop", 0.0, 1))
-                                        else:
-                                            self.queued_moves.append((name, float(speed), 1))
+                                    # Queue the move
+                                    if name == 'stop':
+                                        self.queued_moves.clear()
+                                        self.queued_moves.append(("stop", 0.0, 1))
+                                    else:
+                                        self.queued_moves.append((name, float(speed), 1))
                                 # ignore if not in REMOTE
                         else:
                             # Legacy string commands from dashboard keyboard
                             if c == 'toggle':
-                                if self.manual_mode:
-                                    # Toggle from MANUAL to AUTO
-                                    self.manual_mode = False
-                                    self.remote_mode = False
-                                    self.robot.stop()
-                                    self.queued_moves.clear()
-                                elif self.remote_mode:
-                                    # Toggle from REMOTE to AUTO
-                                    self.manual_mode = False
-                                    self.remote_mode = False
-                                    self.robot.stop()
-                                else:
-                                    # Toggle from AUTO to MANUAL
-                                    self.manual_mode = True
-                                    self.remote_mode = False
-                                    self.robot.stop()
-                                    self.queued_moves.clear()
+                                self.auto_mode = not self.auto_mode
+                                self.robot.stop()
+                                self.queued_moves.clear()
                             elif c == 'auto':
-                                self.manual_mode = False
-                                self.remote_mode = False
+                                self.auto_mode = True
                                 self.robot.stop()
                                 self.queued_moves.clear()
                             elif c == 'stop':
-                                # Stop command should work in any mode
+                                # Stop command works in both modes
                                 self.queued_moves.clear()
                                 self.queued_moves.append(("stop", 0.0, 1))
-                            elif c in ('forward','backward','left','right'):
-                                # If we get a movement command, switch to manual mode
-                                if not self.manual_mode:
-                                    self.manual_mode = True
-                                    self.remote_mode = False
-                                    self.queued_moves.clear()
+                            elif c in ('forward','backward','left','right') and not self.auto_mode:
+                                # Only process movement commands in REMOTE mode
                                 spd = (self._cfg("FORWARD_SPD", config.FORWARD_SPD) if c == "forward"
                                        else self._cfg("BACK_SPD", config.BACK_SPD) if c == "backward"
                                        else self._cfg("TURN_SPD", config.TURN_SPD))
                                 self.queued_moves.append((c, float(spd), 1))
 
-                # If in REMOTE mode and no immediate remote command is running, idle (no motion)
-                if self.remote_mode:
+                # If in REMOTE mode and no immediate command is running, idle (no motion)
+                if not self.auto_mode and not self.queued_moves:
                     d = self.sensor.distance_cm()
                     notes = "remote_idle"
-                    self._broadcast({
+                    state = {
                         "mode": "REMOTE",
                         "distance_cm": (None if d == float('inf') else round(d,2)),
                         "executed_motion": "stop",
                         "executed_speed": 0.0,
-                        "next_motion": "remote",
+                        "next_motion": "idle",
                         "next_speed": 0.0,
                         "notes": notes,
                         "stuck": 0,
                         "queue_len": 0,
                         "log_file": self.log_file,
-                    })
+                    }
+                    self._broadcast(state)
                     try:
-                        self.hub.set_state({
-                            "mode": "REMOTE",
-                            "distance_cm": (None if d == float('inf') else round(d,2)),
-                            "executed_motion": "stop",
-                            "executed_speed": 0.0,
-                            "next_motion": "remote",
-                            "next_speed": 0.0,
-                            "notes": notes,
-                            "stuck": 0,
-                            "queue_len": 0,
-                            "log_file": self.log_file,
-                        })
+                        self.hub.set_state(state)
                     except Exception:
                         pass
+                    time.sleep(0.1)  # Prevent busy-waiting
                     continue
 
-                # Manual branch executes and emits
-                if self.manual_mode:
-                    if self.queued_moves:
-                        exec_motion, exec_speed, _ = self.queued_moves.pop(0)
-                    else:
-                        exec_motion, exec_speed = "stop", 0.0
+                # Handle remote commands
+                if not self.auto_mode and self.queued_moves:
+                    exec_motion, exec_speed, _ = self.queued_moves.pop(0)
                     execute_motion(self.robot, exec_motion, exec_speed, self._duration_for_motion(exec_motion))
                     d = self.sensor.distance_cm()
-                    notes = "manual_cmd" if exec_motion != "stop" else "manual_idle"
-                    next_motion, next_speed = ("manual", 0.0)
-                    # log
-                    self.writer(["MANUAL", d, exec_motion, exec_speed, next_motion, next_speed, notes, 0, 0])
-                    # broadcast
-                    self._broadcast({
-                        "mode": "MANUAL",
+                    notes = f"remote_cmd_{exec_motion}" if exec_motion != "stop" else "remote_idle"
+                    
+                    # Log the action
+                    self.writer(["REMOTE", d, exec_motion, exec_speed, "idle", 0.0, notes, 0, 0])
+                    
+                    # Broadcast the state
+                    state = {
+                        "mode": "REMOTE",
                         "distance_cm": (None if d == float('inf') else round(d,2)),
                         "executed_motion": exec_motion,
-                        "executed_speed": round(exec_speed,2),
-                        "next_motion": next_motion,
-                        "next_speed": next_speed,
+                        "executed_speed": round(exec_speed, 2),
+                        "next_motion": "idle",
+                        "next_speed": 0.0,
                         "notes": notes,
                         "stuck": 0,
-                        "queue_len": 0,
+                        "queue_len": len(self.queued_moves),
                         "log_file": self.log_file,
-                    })
+                    }
+                    self._broadcast(state)
+                    try:
+                        self.hub.set_state(state)
+                    except Exception:
+                        pass
                     continue
 
                 # Auto branch
