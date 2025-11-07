@@ -43,12 +43,13 @@ class Controller:
         self.cfg = config_manager
         self.policy = policy_manager
 
-        self.current_motion = "forward"
-        self.current_speed = config.FORWARD_SPD
+        self.current_motion = "stop"  # Start in stopped state
+        self.current_speed = 0.0
         self.dist_hist = deque(maxlen=config.STUCK_STEPS)
         self.stuck_cooldown = 0
         self.queued_moves = []  # (motion, speed, ticks_remaining)
         self.auto_mode = True  # True = AUTO mode, False = REMOTE mode
+        self.emergency_stopped = False  # Track if we're in emergency stop state
 
     def _cfg(self, key, default):
         if self.cfg is not None:
@@ -62,9 +63,11 @@ class Controller:
             self.queued_moves.clear()
             self.current_motion = "stop"
             self.current_speed = 0.0
+            self.emergency_stopped = True  # Set emergency stop flag
+            
             # Broadcast the emergency stop
             self._broadcast({
-                "mode": "AUTO" if self.auto_mode else "REMOTE",
+                "mode": "STOPPED",
                 "distance_cm": None,
                 "executed_motion": "stop",
                 "executed_speed": 0.0,
@@ -148,6 +151,8 @@ class Controller:
                         else:
                             # Legacy string commands from dashboard keyboard
                             if c == 'toggle':
+                                if self.emergency_stopped:
+                                    self.emergency_stopped = False  # Clear emergency stop
                                 self.auto_mode = not self.auto_mode
                                 self.robot.stop()
                                 self.queued_moves.clear()
@@ -165,6 +170,11 @@ class Controller:
                                        else self._cfg("TURN_SPD", config.TURN_SPD))
                                 self.queued_moves.append((c, float(spd), 1))
 
+                # If in emergency stop, stay stopped until explicitly cleared
+                if self.emergency_stopped:
+                    time.sleep(0.1)
+                    continue
+                    
                 # If in REMOTE mode and no immediate command is running, idle (no motion)
                 if not self.auto_mode and not self.queued_moves:
                     d = self.sensor.distance_cm()
@@ -219,7 +229,11 @@ class Controller:
                         pass
                     continue
 
-                # Auto branch
+                # Auto branch - skip if emergency stopped
+                if self.emergency_stopped:
+                    time.sleep(0.1)
+                    continue
+                    
                 if self.queued_moves:
                     q_motion, q_speed, q_ticks = self.queued_moves[0]
                     exec_motion, exec_speed = q_motion, q_speed
