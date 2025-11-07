@@ -152,6 +152,7 @@
       color: var(--text);
       border: 1px solid #2a2f57;
       padding: 10px 14px;
+      transition: all 0.2s ease;
       border-radius: 10px;
       font-weight: 600;
       letter-spacing: 0.3px;
@@ -169,6 +170,83 @@
     .btn-danger { background: #4b1d2b; border-color: #a33f5a; }
     .btn-success { background: #1f3f30; border-color: #2e6f52; }
 
+    /* Configuration Overrides */
+    .config-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .config-group {
+      background: rgba(10, 12, 25, 0.3);
+      border: 1px solid #2a2f57;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .config-group h3 {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .control-group {
+      margin-bottom: 10px;
+    }
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #cdd4ff;
+      margin-bottom: 4px;
+    }
+    .control-group input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: #1d2346;
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      margin: 8px 0;
+    }
+    
+    .control-group input[type="range"].overridden {
+      background: linear-gradient(90deg, #2a356e 0%, #2a356e var(--fill-percent, 0%), #1d2346 var(--fill-percent, 0%));
+    }
+    .control-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .control-group input[type="range"]:hover::-webkit-slider-thumb {
+      transform: scale(1.2);
+    }
+    .status-message {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-top: 8px;
+      transition: all 0.3s ease;
+    }
+    .status-message.success {
+      background: rgba(46, 204, 113, 0.15);
+      color: #2ecc71;
+      border: 1px solid rgba(46, 204, 113, 0.3);
+    }
+    .status-message.error {
+      background: rgba(231, 76, 60, 0.15);
+      color: #e74c3c;
+      border: 1px solid rgba(231, 76, 60, 0.3);
+    }
+
     @media (max-width: 980px) {
       .container {
         grid-template-columns: 1fr;
@@ -180,6 +258,11 @@
           "controls";
       }
       .cards { grid-template-columns: 1fr 1fr; }
+      .config-grid { grid-template-columns: 1fr 1fr; }
+    }
+    
+    @media (max-width: 600px) {
+      .config-grid { grid-template-columns: 1fr; }
     }
   </style>
   </head>
@@ -293,12 +376,103 @@
       <div class="log-box" id="logBox"></div>
     </section>
 
-    <!-- CONTROLS (keyboard help) -->
+    <!-- CONFIGURATION OVERRIDES -->
     <section class="panel controls">
-      <h2>Keyboard</h2>
-      <div class="explain">
-        Press Enter to toggle MANUAL/AUTO, and use W/A/S/D to drive in MANUAL. In AUTO, the robot decides motions based on the distance sensor and stuck detection.
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0;">Configuration Overrides</h2>
+        <div>
+          <button id="btnResetOverrides" class="btn-danger" style="width: auto; padding: 6px 12px; margin-left: 10px;">Reset All</button>
+          <button id="btnApplyOverrides" class="btn-success" style="width: auto; padding: 6px 12px;">Apply Changes</button>
+        </div>
       </div>
+      
+      <div class="config-grid">
+        <!-- Speeds -->
+        <div class="config-group">
+          <h3>Speeds (0-1)</h3>
+          <div class="control-group">
+            <label>Forward: <span class="value" id="val-FORWARD_SPD">0.40</span></label>
+            <input type="range" min="0.1" max="1" step="0.05" data-key="FORWARD_SPD" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Turn: <span class="value" id="val-TURN_SPD">0.20</span></label>
+            <input type="range" min="0.1" max="1" step="0.05" data-key="TURN_SPD" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Backward: <span class="value" id="val-BACK_SPD">0.20</span></label>
+            <input type="range" min="0.1" max="1" step="0.05" data-key="BACK_SPD" class="override-input">
+          </div>
+        </div>
+
+        <!-- Distances (cm) -->
+        <div class="config-group">
+          <h3>Distances (cm)</h3>
+          <div class="control-group">
+            <label>Stop: <span class="value" id="val-STOP_CM">15</span> cm</label>
+            <input type="range" min="5" max="50" step="1" data-key="STOP_CM" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Clear: <span class="value" id="val-CLEAR_CM">30</span> cm</label>
+            <input type="range" min="10" max="100" step="1" data-key="CLEAR_CM" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Max: <span class="value" id="val-MAX_DISTANCE_M">2.5</span> m</label>
+            <input type="range" min="1" max="5" step="0.1" data-key="MAX_DISTANCE_M" class="override-input">
+          </div>
+        </div>
+
+        <!-- Timing (seconds) -->
+        <div class="config-group">
+          <h3>Timing (seconds)</h3>
+          <div class="control-group">
+            <label>Tick: <span class="value" id="val-TICK_S">0.5</span>s</label>
+            <input type="range" min="0.1" max="2" step="0.1" data-key="TICK_S" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Move Tick: <span class="value" id="val-MOVE_TICK_S">0.5</span>s</label>
+            <input type="range" min="0.1" max="2" step="0.1" data-key="MOVE_TICK_S" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Turn Tick: <span class="value" id="val-TURN_TICK_S">0.5</span>s</label>
+            <input type="range" min="0.1" max="2" step="0.1" data-key="TURN_TICK_S" class="override-input">
+          </div>
+        </div>
+
+        <!-- Stuck Detection -->
+        <div class="config-group">
+          <h3>Stuck Detection</h3>
+          <div class="control-group">
+            <label>Delta: <span class="value" id="val-STUCK_DELTA_CM">5</span> cm</label>
+            <input type="range" min="1" max="20" step="1" data-key="STUCK_DELTA_CM" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Steps: <span class="value" id="val-STUCK_STEPS">4</span></label>
+            <input type="range" min="1" max="10" step="1" data-key="STUCK_STEPS" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Cooldown: <span class="value" id="val-STUCK_COOLDOWN_STEPS">4</span></label>
+            <input type="range" min="1" max="10" step="1" data-key="STUCK_COOLDOWN_STEPS" class="override-input">
+          </div>
+        </div>
+
+        <!-- Movement -->
+        <div class="config-group">
+          <h3>Movement</h3>
+          <div class="control-group">
+            <label>Back Ticks: <span class="value" id="val-BACK_TICKS">3</span></label>
+            <input type="range" min="1" max="10" step="1" data-key="BACK_TICKS" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Nudge Ticks: <span class="value" id="val-NUDGE_TICKS">1</span></label>
+            <input type="range" min="1" max="5" step="1" data-key="NUDGE_TICKS" class="override-input">
+          </div>
+          <div class="control-group">
+            <label>Samples/Read: <span class="value" id="val-SAMPLES_PER_READ">3</span></label>
+            <input type="range" min="1" max="10" step="1" data-key="SAMPLES_PER_READ" class="override-input">
+          </div>
+        </div>
+      </div>
+      <div id="overrideStatus" class="status-message" style="margin-top: 12px; font-size: 13px; color: var(--muted);"></div>
     </section>
   </main>
 
@@ -507,6 +681,108 @@
     setQueue(0);
     setStuck(false);
     updateUptime();
+    
+    // Load current configuration
+    async function loadConfig() {
+      try {
+        const response = await fetch('/api/config');
+        if (!response.ok) throw new Error('Failed to load config');
+        const data = await response.json();
+        
+        // Update UI with current values
+        Object.entries(data.effective).forEach(([key, value]) => {
+          const input = document.querySelector(`.override-input[data-key="${key}"]`);
+          const valueSpan = document.getElementById(`val-${key}`);
+          if (input && valueSpan) {
+            input.value = value;
+            valueSpan.textContent = value;
+          }
+        });
+        
+        // Mark overridden values
+        if (data.overrides) {
+          Object.keys(data.overrides).forEach(key => {
+            const input = document.querySelector(`.override-input[data-key="${key}"]`);
+            if (input) input.classList.add('overridden');
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error loading config:', error);
+        showStatus('Failed to load configuration', 'error');
+      }
+    }
+    
+    // Handle slider changes
+    document.querySelectorAll('.override-input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const key = e.target.dataset.key;
+        const value = parseFloat(e.target.value);
+        document.getElementById(`val-${key}`).textContent = value.toFixed(key.includes('TICK_') ? 1 : 0);
+        e.target.classList.add('overridden');
+      });
+    });
+    
+    // Apply overrides
+    async function applyOverrides() {
+      const overrides = {};
+      document.querySelectorAll('.override-input.overridden').forEach(input => {
+        const key = input.dataset.key;
+        overrides[key] = parseFloat(input.value);
+      });
+      
+      try {
+        const response = await fetch('/api/config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ overrides })
+        });
+        
+        if (!response.ok) throw new Error('Failed to apply overrides');
+        
+        showStatus('Configuration updated successfully', 'success');
+        loadConfig(); // Refresh to get any server-side validations
+      } catch (error) {
+        console.error('Error applying overrides:', error);
+        showStatus('Failed to apply overrides', 'error');
+      }
+    }
+    
+    // Reset all overrides
+    async function resetOverrides() {
+      try {
+        const response = await fetch('/api/config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ overrides: {} })
+        });
+        
+        if (!response.ok) throw new Error('Failed to reset overrides');
+        
+        showStatus('Configuration reset to defaults', 'success');
+        loadConfig(); // Reload default values
+      } catch (error) {
+        console.error('Error resetting overrides:', error);
+        showStatus('Failed to reset overrides', 'error');
+      }
+    }
+    
+    // Show status message
+    function showStatus(message, type = 'info') {
+      const statusEl = document.getElementById('overrideStatus');
+      statusEl.textContent = message;
+      statusEl.className = 'status-message ' + (type === 'info' ? '' : type);
+      if (type !== 'info') {
+        setTimeout(() => statusEl.className = 'status-message', 3000);
+      }
+    }
+    
+    // Event listeners
+    document.getElementById('btnApplyOverrides').addEventListener('click', applyOverrides);
+    document.getElementById('btnResetOverrides').addEventListener('click', resetOverrides);
+    
+    // Initial load
+    loadConfig();
 
     // Sensor cone drawing helpers
     
@@ -557,36 +833,36 @@
       } else {
         label.textContent = `${distanceCm.toFixed(1)} cm`;
       }
-      if (state.simulateDistance) {
-        console.log('[SIM] distance:', distanceCm, 'r:', r.toFixed(1), 'hue:', hue, 'd:', d);
-      }
+      // if (state.simulateDistance) {
+      //   console.log('[SIM] distance:', distanceCm, 'r:', r.toFixed(1), 'hue:', hue, 'd:', d);
+      // }
     }
 
-    // Debug: distance simulation controls
-    const dbgSim = document.getElementById('dbgSim');
-    const dbgRange = document.getElementById('dbgRange');
-    const dbgVal = document.getElementById('dbgVal');
-    if (dbgSim && dbgRange && dbgVal) {
-      const applySim = () => {
-        const val = Number(dbgRange.value);
-        dbgVal.textContent = `${val} cm`;
-        // Always reflect slider in the visualization; in non-sim mode SSE may later override
-        setDistance(val);
-      };
-      dbgSim.addEventListener('change', () => {
-        state.simulateDistance = dbgSim.checked;
-        applySim();
-      });
-      dbgRange.addEventListener('input', applySim);
-    }
+    // Debug: distance simulation controls (commented out)
+    // const dbgSim = document.getElementById('dbgSim');
+    // const dbgRange = document.getElementById('dbgRange');
+    // const dbgVal = document.getElementById('dbgVal');
+    // if (dbgSim && dbgRange && dbgVal) {
+    //   const applySim = () => {
+    //     const val = Number(dbgRange.value);
+    //     dbgVal.textContent = `${val} cm`;
+    //     // Always reflect slider in the visualization; in non-sim mode SSE may later override
+    //     setDistance(val);
+    //   };
+    //   dbgSim.addEventListener('change', () => {
+    //     state.simulateDistance = dbgSim.checked;
+    //     applySim();
+    //   });
+    //   dbgRange.addEventListener('input', applySim);
+    // }
 
     // Force an initial draw of the sensor cone so it's visible even before data
     updateSensorCone(100);
-    if (state.simulateDistance) {
-      if (dbgSim) dbgSim.checked = true;
-      const start = dbgRange ? Number(dbgRange.value) : 100;
-      setDistance(start);
-    }
+    // if (state.simulateDistance) {
+    //   if (dbgSim) dbgSim.checked = true;
+    //   const start = dbgRange ? Number(dbgRange.value) : 100;
+    //   setDistance(start);
+    // }
   </script>
   </body>
   </html>
