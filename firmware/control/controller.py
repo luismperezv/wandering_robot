@@ -55,6 +55,31 @@ class Controller:
             return self.cfg.get(key, default)
         return getattr(config, key, default)
 
+    def emergency_stop(self):
+        """Immediately stop all robot movement and clear all state."""
+        try:
+            self.robot.stop()
+            self.queued_moves.clear()
+            self.current_motion = "stop"
+            self.current_speed = 0.0
+            # Broadcast the emergency stop
+            self._broadcast({
+                "mode": "AUTO" if self.auto_mode else "REMOTE",
+                "distance_cm": None,
+                "executed_motion": "stop",
+                "executed_speed": 0.0,
+                "next_motion": "stop",
+                "next_speed": 0.0,
+                "notes": "EMERGENCY_STOP",
+                "stuck": 0,
+                "queue_len": 0,
+                "log_file": self.log_file,
+            })
+            return True
+        except Exception as e:
+            print(f"Emergency stop error: {e}")
+            return False
+
     def _broadcast(self, msg: dict):
         try:
             # Ensure mode is set correctly based on auto_mode
@@ -99,7 +124,7 @@ class Controller:
                                     self.queued_moves.clear()
                                     continue
                                 # Handle movement commands in REMOTE mode
-                                if not self.auto_mode and name in ("forward", "backward", "left", "right", "stop"):
+                                if not self.auto_mode and name in ("forward", "backward", "left", "right"):
                                     if speed is None:
                                         if name == "forward":
                                             speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
@@ -115,11 +140,10 @@ class Controller:
                                     )
                                     
                                     # Queue the move
-                                    if name == 'stop':
-                                        self.queued_moves.clear()
-                                        self.queued_moves.append(("stop", 0.0, 1))
-                                    else:
-                                        self.queued_moves.append((name, float(speed), 1))
+                                    self.queued_moves.append((name, float(speed), 1))
+                                elif name == 'stop':
+                                    # Emergency stop - clear all state and stop immediately
+                                    self.emergency_stop()
                                 # ignore if not in REMOTE
                         else:
                             # Legacy string commands from dashboard keyboard
@@ -132,9 +156,8 @@ class Controller:
                                 self.robot.stop()
                                 self.queued_moves.clear()
                             elif c == 'stop':
-                                # Stop command works in both modes
-                                self.queued_moves.clear()
-                                self.queued_moves.append(("stop", 0.0, 1))
+                                # Emergency stop - clear all state and stop immediately
+                                self.emergency_stop()
                             elif c in ('forward','backward','left','right') and not self.auto_mode:
                                 # Only process movement commands in REMOTE mode
                                 spd = (self._cfg("FORWARD_SPD", config.FORWARD_SPD) if c == "forward"
