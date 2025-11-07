@@ -264,6 +264,14 @@ class Controller:
                         next_motion, next_speed, notes = self.policy.decide_next_motion(d, exec_motion)
                     else:
                         next_motion, next_speed, notes = decide_next_motion(d, exec_motion)
+                    
+                    # Apply speed overrides based on motion type
+                    if next_motion == "forward":
+                        next_speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
+                    elif next_motion == "backward":
+                        next_speed = float(self._cfg("BACK_SPD", config.BACK_SPD))
+                    elif next_motion in ["left", "right"]:
+                        next_speed = float(self._cfg("TURN_SPD", config.TURN_SPD))
                     if self.stuck_cooldown > 0:
                         self.stuck_cooldown -= 1
                     else:
@@ -324,10 +332,10 @@ class Controller:
             except Exception:
                 pass
 
-    def _duration_for_motion(self, motion: str) -> float:
-        if motion in ("left", "right"):
-            return getattr(config, "TURN_TICK_S", self._cfg("TICK_S", config.TICK_S))
+    def _duration_for_motion(self, motion: str):
+        if motion in ["forward", "backward"]:
+            return float(self._cfg("MOVE_TICK_S", config.MOVE_TICK_S))
+        elif motion in ["left", "right"]:
+            return float(self._cfg("TURN_TICK_S", config.TURN_TICK_S))
         else:
-            return getattr(config, "MOVE_TICK_S", self._cfg("TICK_S", config.TICK_S))
-
-
+            return float(self._cfg("TICK_S", config.TICK_S))
