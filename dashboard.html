@@ -695,7 +695,9 @@
           const valueSpan = document.getElementById(`val-${key}`);
           if (input && valueSpan) {
             input.value = value;
-            valueSpan.textContent = value;
+            const displayValue = key.endsWith('_SPD') ? value.toFixed(2) : 
+                             (key.includes('TICK_') ? value.toFixed(1) : value.toFixed(0));
+            valueSpan.textContent = displayValue;
           }
         });
         
@@ -718,7 +720,9 @@
       input.addEventListener('input', (e) => {
         const key = e.target.dataset.key;
         const value = parseFloat(e.target.value);
-        document.getElementById(`val-${key}`).textContent = value.toFixed(key.includes('TICK_') ? 1 : 0);
+        const displayValue = key.endsWith('_SPD') ? value.toFixed(2) : 
+                           (key.includes('TICK_') ? value.toFixed(1) : value.toFixed(0));
+        document.getElementById(`val-${key}`).textContent = displayValue;
         e.target.classList.add('overridden');
       });
     });
