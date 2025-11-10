@@ -48,7 +48,7 @@ class Controller:
         self.dist_hist = deque(maxlen=config.STUCK_STEPS)
         self.stuck_cooldown = 0
         self.queued_moves = []  # (motion, speed, ticks_remaining)
-        self.auto_mode = True  # True = AUTO mode, False = REMOTE mode
+        self.auto_mode = False  # True = AUTO mode, False = MANUAL/REMOTE mode
         self.emergency_stopped = False  # Track if we're in emergency stop state
 
     def _cfg(self, key, default):
