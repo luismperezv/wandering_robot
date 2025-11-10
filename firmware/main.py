@@ -55,13 +55,26 @@ def main():
 
     def write_row(row):
         # row: [mode, d, exec_motion, exec_speed, next_motion, next_speed, notes, stuck, qlen]
+        def format_value(value, is_numeric=False):
+            if value is None:
+                return ""
+            if is_numeric and value == float('inf'):
+                return ""
+            if is_numeric:
+                return f"{float(value):.2f}"
+            return str(value)
+            
         writer.writerow([
             datetime.now().isoformat(timespec="seconds"),
-            row[0],
-            ("" if row[1] == float('inf') else f"{row[1]:.2f}"),
-            row[2], f"{row[3]:.2f}",
-            row[4], f"{row[5]:.2f}",
-            row[6], row[7], row[8]
+            row[0],  # mode
+            format_value(row[1], is_numeric=True),  # distance_cm
+            row[2],  # executed_motion
+            format_value(row[3], is_numeric=True),  # executed_speed
+            row[4],  # next_motion
+            format_value(row[5], is_numeric=True),  # next_speed
+            row[6],  # notes
+            row[7],  # stuck_triggered
+            row[8]   # queue_len
         ])
         f.flush()
 
