@@ -65,11 +65,11 @@ class ConfigManager:
                 # Log the config change in the CSV
                 self._writer([
                     "CONFIG",  # mode
-                    "",        # distance_cm
+                    None,       # distance_cm (None for numeric field)
                     "",        # executed_motion
-                    "",        # executed_speed
+                    None,       # executed_speed (None for numeric field)
                     "",        # next_motion
-                    "",        # next_speed
+                    None,       # next_speed (None for numeric field)
                     notes,     # notes
                     0,         # stuck_triggered
                     0          # queue_len
@@ -89,11 +89,11 @@ class ConfigManager:
             if hasattr(self, '_writer') and callable(self._writer):
                 self._writer([
                     "CONFIG",  # mode
-                    "",        # distance_cm
+                    None,       # distance_cm (None for numeric field)
                     "",        # executed_motion
-                    "",        # executed_speed
+                    None,       # executed_speed (None for numeric field)
                     "",        # next_motion
-                    "",        # next_speed
+                    None,       # next_speed (None for numeric field)
                     notes,     # notes
                     0,         # stuck_triggered
                     0          # queue_len
