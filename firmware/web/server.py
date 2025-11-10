@@ -237,7 +237,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(204); self._set_cors(); self.end_headers(); return
         if parsed.path == "/api/config/overrides":
             if self.config_manager:
-                self.config_manager.clear_overrides()
+                was_cleared = self.config_manager.clear_overrides()
+                if was_cleared:
+                    self.send_response(200)
+                    self._set_cors()
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    snap = self.config_manager.snapshot()
+                    self.wfile.write(json.dumps({"ok": True, "message": "Overrides cleared", **snap}).encode("utf-8"))
+                    return
             self.send_response(204); self._set_cors(); self.end_headers(); return
         self.send_response(404); self._set_cors(); self.end_headers()
 

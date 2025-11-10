@@ -78,10 +78,9 @@ class ConfigManager:
         return changes
 
     def clear_overrides(self):
-        was_cleared = False
+        was_cleared = bool(self._overrides)  # True if there were overrides to clear
         
-        if self._overrides:  # Only log if there were overrides to clear
-            was_cleared = True
+        if was_cleared:  # Only log if there were overrides to clear
             notes = f"CONFIG: Cleared overrides: {', '.join(self._overrides.keys())}"
             self._overrides = {}
             self._save()
