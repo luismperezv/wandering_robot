@@ -755,18 +755,39 @@
     // Reset all overrides
     async function resetOverrides() {
       try {
-        const response = await fetch('/api/config/overrides', {
+        // First clear the overrides
+        const deleteResponse = await fetch('/api/config/overrides', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' }
         });
         
-        if (!response.ok) throw new Error('Failed to reset overrides');
+        if (!deleteResponse.ok) throw new Error('Failed to reset overrides');
+        
+        // Then immediately fetch the updated config
+        const configResponse = await fetch('/api/config');
+        if (!configResponse.ok) throw new Error('Failed to load config after reset');
+        
+        const data = await configResponse.json();
+        
+        // Update the UI with the new values
+        Object.entries(data.effective).forEach(([key, value]) => {
+          const input = document.querySelector(`.override-input[data-key="${key}"]`);
+          const valueSpan = document.getElementById(`val-${key}`);
+          if (input && valueSpan) {
+            input.value = value;
+            const displayValue = key.endsWith('_SPD') ? parseFloat(value).toFixed(2) : 
+                             (key.includes('TICK_') ? parseFloat(value).toFixed(1) : Math.round(value).toString());
+            valueSpan.textContent = displayValue;
+            input.classList.remove('overridden');
+          }
+        });
         
         showStatus('Configuration reset to defaults', 'success');
-        loadConfig(); // Reload default values
       } catch (error) {
         console.error('Error resetting overrides:', error);
         showStatus('Failed to reset overrides', 'error');
+        // Try to reload the config anyway
+        loadConfig();
       }
     }
     
