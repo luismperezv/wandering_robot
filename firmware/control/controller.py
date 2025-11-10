@@ -42,6 +42,10 @@ class Controller:
         self.log_file = log_file
         self.cfg = config_manager
         self.policy = policy_manager
+        
+        # Set the writer for config changes if config manager is available
+        if self.cfg is not None and hasattr(self.cfg, 'set_writer'):
+            self.cfg.set_writer(self.writer)
 
         self.current_motion = "stop"  # Start in stopped state
         self.current_speed = 0.0
@@ -177,25 +181,28 @@ class Controller:
                     
                 # If in REMOTE mode and no immediate command is running, idle (no motion)
                 if not self.auto_mode and not self.queued_moves:
-                    d = self.sensor.distance_cm()
-                    notes = "remote_idle"
-                    state = {
-                        "mode": "REMOTE",
-                        "distance_cm": (None if d == float('inf') else round(d,2)),
-                        "executed_motion": "stop",
-                        "executed_speed": 0.0,
-                        "next_motion": "idle",
-                        "next_speed": 0.0,
-                        "notes": notes,
-                        "stuck": 0,
-                        "queue_len": 0,
-                        "log_file": self.log_file,
-                    }
-                    self._broadcast(state)
-                    try:
-                        self.hub.set_state(state)
-                    except Exception:
-                        pass
+                    # Only update state if it's changed from the last broadcast
+                    if not hasattr(self, '_last_idle_state') or time.time() - getattr(self, '_last_idle_time', 0) > 5.0:
+                        d = self.sensor.distance_cm()
+                        state = {
+                            "mode": "REMOTE",
+                            "distance_cm": (None if d == float('inf') else round(d,2)),
+                            "executed_motion": "stop",
+                            "executed_speed": 0.0,
+                            "next_motion": "idle",
+                            "next_speed": 0.0,
+                            "notes": "remote_idle",
+                            "stuck": 0,
+                            "queue_len": 0,
+                            "log_file": self.log_file,
+                        }
+                        self._broadcast(state)
+                        try:
+                            self.hub.set_state(state)
+                        except Exception:
+                            pass
+                        self._last_idle_state = state
+                        self._last_idle_time = time.time()
                     time.sleep(0.1)  # Prevent busy-waiting
                     continue
 

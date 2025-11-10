@@ -9,7 +9,12 @@ class ConfigManager:
         self._defaults = defaults_module
         self._persist_path = persist_path
         self._overrides: Dict[str, Any] = {}
+        self._writer = None  # Will be set by the controller
         self._load()
+        
+    def set_writer(self, writer):
+        """Set the writer function for logging configuration changes"""
+        self._writer = writer
 
     def _load(self):
         try:
@@ -41,14 +46,60 @@ class ConfigManager:
         return getattr(self._defaults, key, default)
 
     def set_overrides(self, overrides: Dict[str, Any]):
+        changes = []
+        
+        # Process each override
         for k, v in overrides.items():
             if k.isupper():
-                self._overrides[k] = v
-        self._save()
+                old_value = self._overrides.get(k, 'default')
+                if k not in self._overrides or self._overrides[k] != v:
+                    changes.append(f"{k}={v}(was:{old_value})")
+                    self._overrides[k] = v
+        
+        if changes:  # Only save if there were actual changes
+            self._save()
+            
+            # Log the changes in a format that fits the CSV notes column
+            notes = "CONFIG: " + ", ".join(changes)
+            if hasattr(self, '_writer') and callable(self._writer):
+                # Log the config change in the CSV
+                self._writer([
+                    "CONFIG",  # mode
+                    "",        # distance_cm
+                    "",        # executed_motion
+                    "",        # executed_speed
+                    "",        # next_motion
+                    "",        # next_speed
+                    notes,     # notes
+                    0,         # stuck_triggered
+                    0          # queue_len
+                ])
+                
+        return changes
 
     def clear_overrides(self):
-        self._overrides = {}
-        self._save()
+        was_cleared = False
+        
+        if self._overrides:  # Only log if there were overrides to clear
+            was_cleared = True
+            notes = f"CONFIG: Cleared overrides: {', '.join(self._overrides.keys())}"
+            self._overrides = {}
+            self._save()
+            
+            if hasattr(self, '_writer') and callable(self._writer):
+                self._writer([
+                    "CONFIG",  # mode
+                    "",        # distance_cm
+                    "",        # executed_motion
+                    "",        # executed_speed
+                    "",        # next_motion
+                    "",        # next_speed
+                    notes,     # notes
+                    0,         # stuck_triggered
+                    0          # queue_len
+                ])
+                
+        return was_cleared
 
     def snapshot(self) -> Dict[str, Any]:
         return {
