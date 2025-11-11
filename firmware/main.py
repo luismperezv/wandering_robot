@@ -30,7 +30,7 @@ def main():
     server = None
     hub = None
     commands_q = None
-        overrides_path = os.path.join(project_root, "firmware", "config_overrides.json")
+    overrides_path = os.path.join(project_root, "firmware", "config_overrides.json")
     policy_path = os.path.join(project_root, "firmware", "policies", "custom_policy.py")
     cfg_mgr = ConfigManager(config, overrides_path)
     policy_mgr = PolicyManager(default_policy, policy_path)
@@ -62,7 +62,7 @@ def main():
         server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))), config_manager=cfg_mgr, policy_manager=policy_mgr)
     except Exception as e:
         print(f"[dashboard] failed to start HTTP server: {e}")
-        
+
     robot = CamJamKitRobot()
     sensor = PigpioUltrasonic(config.TRIG, config.ECHO, max_distance_m=config.MAX_DISTANCE_M, samples=config.SAMPLES_PER_READ)
 
