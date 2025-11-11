@@ -30,15 +30,39 @@ def main():
     server = None
     hub = None
     commands_q = None
-    overrides_path = os.path.join(project_root, "firmware", "config_overrides.json")
+        overrides_path = os.path.join(project_root, "firmware", "config_overrides.json")
     policy_path = os.path.join(project_root, "firmware", "policies", "custom_policy.py")
     cfg_mgr = ConfigManager(config, overrides_path)
     policy_mgr = PolicyManager(default_policy, policy_path)
+
+    # Debug output
+    print("\n=== Debug Info ===")
+    print(f"Project root: {project_root}")
+    print(f"Config file: {config.__file__}")
+    print(f"Overrides path: {overrides_path}")
+    print(f"Overrides file exists: {os.path.exists(overrides_path)}")
+
+    if os.path.exists(overrides_path):
+        try:
+            with open(overrides_path, 'r') as f:
+                print(f"Current overrides: {f.read()}")
+        except Exception as e:
+            print(f"Error reading overrides file: {e}")
+
+    print("\n=== Current Configuration ===")
+    print(f"FORWARD_SPD = {config.FORWARD_SPD} (from config.py)")
+    print(f"FORWARD_SPD = {cfg_mgr.get('FORWARD_SPD')} (from ConfigManager)")
+    print(f"TURN_SPD = {config.TURN_SPD} (from config.py)")
+    print(f"TURN_SPD = {cfg_mgr.get('TURN_SPD')} (from ConfigManager)")
+    print(f"BACK_SPD = {config.BACK_SPD} (from config.py)")
+    print(f"BACK_SPD = {cfg_mgr.get('BACK_SPD')} (from ConfigManager)")
+    print("=" * 40 + "\n")
+
     try:
         server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))), config_manager=cfg_mgr, policy_manager=policy_mgr)
     except Exception as e:
         print(f"[dashboard] failed to start HTTP server: {e}")
-
+        
     robot = CamJamKitRobot()
     sensor = PigpioUltrasonic(config.TRIG, config.ECHO, max_distance_m=config.MAX_DISTANCE_M, samples=config.SAMPLES_PER_READ)
 
