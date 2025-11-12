@@ -308,9 +308,9 @@ class Controller:
                 stuck_triggered = 0
                 if not self.queued_moves:
                     if self.policy is not None:
-                        next_motion, next_speed, notes = self.policy.decide_next_motion(d, exec_motion)
+                        next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
                     else:
-                        next_motion, next_speed, notes = decide_next_motion(d, exec_motion)
+                        next_motion, next_speed, notes = decide_next_motion(front_d, exec_motion)
                     
                     # Apply speed overrides based on motion type
                     if next_motion == "forward":
