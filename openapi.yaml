@@ -1,0 +1,460 @@
+openapi: 3.1.0
+info:
+  title: Wandering Robot API
+  version: 0.1.0
+  description: |
+    HTTP+SSE API to control the robot, read status, and adjust runtime configuration.
+    
+    Conventions:
+    - Content type for JSON requests is `application/json`
+    - Durations in API can be provided as `duration_ms` (milliseconds) or `duration_s` (seconds)
+    - Speeds are 0..1 (unitless)
+    - Configuration values are in the same units as `firmware/config.py`
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: 192.168.0.228
+      port:
+        default: '8000'
+tags:
+  - name: status
+  - name: control
+  - name: config
+  - name: docs
+paths:
+  /api/status:
+    get:
+      tags: [status]
+      summary: Get current status
+      description: Latest snapshot (mode, last executed motion/speed, distance, queue, log file, etc.).
+      responses:
+        '200':
+          description: Status snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+              examples:
+                example:
+                  summary: Typical AUTO snapshot
+                  value:
+                    mode: AUTO
+                    distance_cm: 42.1
+                    executed_motion: forward
+                    executed_speed: 0.4
+                    next_motion: forward
+                    next_speed: 0.4
+                    notes: cruising
+                    stuck: 0
+                    queue_len: 0
+                    log_file: runlog_20251106_101500.csv
+  /api/mode:
+    post:
+      tags: [control]
+      summary: Set mode
+      description: Switch the controller into AUTO, MANUAL, or REMOTE. REMOTE idles until commands are received.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModeRequest'
+            examples:
+              toRemote:
+                summary: Enter REMOTE
+                value: { mode: REMOTE }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  mode: { $ref: '#/components/schemas/Mode' }
+        '400': { description: Bad request }
+  /api/cmd:
+    post:
+      tags: [control]
+      summary: Send a movement command (REMOTE mode)
+      description: |
+        Executes a single motion step. Only effective while in REMOTE mode. If in other modes, the request is accepted but may be ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  enum: [forward, backward, left, right, stop]
+                speed:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                duration_ms:
+                  type: integer
+                  minimum: 1
+                duration_s:
+                  type: number
+                  minimum: 0.001
+            examples:
+              forward600ms:
+                summary: Forward for 600ms at 0.6 speed
+                value: { name: forward, speed: 0.6, duration_ms: 600 }
+              left0_4s:
+                summary: Left for 0.4 seconds (default turn speed)
+                value: { name: left, duration_s: 0.4 }
+      responses:
+        '204': { description: Accepted }
+        '400': { description: Bad request }
+  /api/config:
+    get:
+      tags: [config]
+      summary: Get defaults/overrides/effective config
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  defaults:
+                    $ref: '#/components/schemas/ConfigMap'
+                  overrides:
+                    $ref: '#/components/schemas/ConfigMap'
+                  effective:
+                    $ref: '#/components/schemas/ConfigMap'
+              examples:
+                populated:
+                  summary: Example with overrides applied
+                  value:
+                    defaults:
+                      TICK_S: 0.5
+                      MOVE_TICK_S: 0.5
+                      TURN_TICK_S: 0.5
+                      FORWARD_SPD: 0.4
+                      TURN_SPD: 0.2
+                      BACK_SPD: 0.2
+                      STOP_CM: 15
+                      CLEAR_CM: 30
+                      MAX_DISTANCE_M: 2.5
+                      SAMPLES_PER_READ: 3
+                      STUCK_DELTA_CM: 5
+                      STUCK_STEPS: 4
+                      BACK_TICKS: 3
+                      NUDGE_TICKS: 1
+                      STUCK_COOLDOWN_STEPS: 4
+                      TRIG: 19
+                      ECHO: 26
+                      DASHBOARD_PORT: 8000
+                    overrides:
+                      FORWARD_SPD: 0.55
+                      TURN_TICK_S: 0.45
+                    effective:
+                      TICK_S: 0.5
+                      MOVE_TICK_S: 0.5
+                      TURN_TICK_S: 0.45
+                      FORWARD_SPD: 0.55
+                      TURN_SPD: 0.2
+                      BACK_SPD: 0.2
+                      STOP_CM: 15
+                      CLEAR_CM: 30
+                      MAX_DISTANCE_M: 2.5
+                      SAMPLES_PER_READ: 3
+                      STUCK_DELTA_CM: 5
+                      STUCK_STEPS: 4
+                      BACK_TICKS: 3
+                      NUDGE_TICKS: 1
+                      STUCK_COOLDOWN_STEPS: 4
+                      TRIG: 19
+                      ECHO: 26
+                      DASHBOARD_PORT: 8000
+    patch:
+      tags: [config]
+      summary: Set overrides (uppercase keys only)
+      description: |
+        Provide a JSON object of overrides for uppercase config keys. Only documented keys are accepted.
+        Values are validated for type and reasonable bounds. Unknown keys are ignored.
+        The resulting `effective` map applies `overrides` on top of `defaults`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrides:
+                  $ref: '#/components/schemas/ConfigOverrides'
+            examples:
+              speeds:
+                summary: Tune forward and turn speeds
+                value:
+                  overrides:
+                    FORWARD_SPD: 0.55
+                    TURN_SPD: 0.4
+              timings:
+                summary: Change tick durations
+                value:
+                  overrides:
+                    TICK_S: 0.6
+                    MOVE_TICK_S: 0.6
+                    TURN_TICK_S: 0.45
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  defaults:
+                    $ref: '#/components/schemas/ConfigMap'
+                  overrides:
+                    $ref: '#/components/schemas/ConfigMap'
+                  effective:
+                    $ref: '#/components/schemas/ConfigMap'
+  /api/config/overrides:
+    delete:
+      tags: [config]
+      summary: Clear overrides
+      responses:
+        '204': { description: OK }
+  /events:
+  /api/policy:
+    get:
+      tags: [control]
+      summary: Get movement policy status
+      responses:
+        '200':
+          description: Current policy status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string, enum: [default, custom] }
+                  has_custom: { type: boolean }
+                  error: { type: string, nullable: true }
+              examples:
+                default:
+                  value: { name: default, has_custom: false, error: null }
+                custom_ok:
+                  value: { name: custom, has_custom: true, error: null }
+                custom_error:
+                  value: { name: default, has_custom: true, error: "load_error: ..." }
+
+  /api/policy/code:
+    put:
+      tags: [control]
+      summary: Upload custom movement policy code
+      description: |
+        Provide Python source with a function:
+        `decide_next_motion(distance_cm: float, current_motion: str) -> (next_motion: str, next_speed: float, notes: str)`.
+        On success, the custom policy becomes active; on failure, the default policy remains active and `error` is populated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+            examples:
+              simple:
+                summary: Minimal custom policy
+                value:
+                  code: |
+                    def decide_next_motion(distance_cm, current_motion):
+                        if distance_cm is not None and distance_cm < 20:
+                            return ("right", 0.3, "custom: avoid close obstacle")
+                        return ("forward", 0.5, "custom: cruise")
+      responses:
+        '200':
+          description: Custom policy accepted or default retained with error set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  name: { type: string, enum: [default, custom] }
+                  has_custom: { type: boolean }
+                  error: { type: string, nullable: true }
+        '400': { description: Bad request }
+        '500': { description: Failed to save or load policy }
+    delete:
+      tags: [control]
+      summary: Revert to default policy
+      responses:
+        '204': { description: OK }
+    get:
+      tags: [status]
+      summary: Server Sent Events stream
+      description: |
+        Text/event-stream of JSON lines suitable for EventSource clients. Includes state snapshots and log lines.
+        Content type is `text/event-stream`.
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stateLine:
+                  summary: Example event payload (data field only)
+                  value: '{"mode":"AUTO","distance_cm":42.1,...}'
+  /api/openapi.yaml:
+    get:
+      tags: [docs]
+      summary: OpenAPI document (YAML)
+      responses:
+        '200':
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/docs:
+    get:
+      tags: [docs]
+      summary: Rendered API documentation (Redoc)
+      responses:
+        '200': { description: HTML page }
+
+components:
+  schemas:
+    ConfigMap:
+      type: object
+      additionalProperties: true
+      description: Map of configuration keys to values.
+    ConfigOverrides:
+      type: object
+      additionalProperties: false
+      description: Allowed override keys and their types.
+      properties:
+        # Timing & Speeds (seconds and unitless speeds 0..1)
+        TICK_S:
+          type: number
+          description: Discrete step duration (seconds)
+          example: 0.5
+        MOVE_TICK_S:
+          type: number
+          description: Forward/backward step duration (seconds)
+          example: 0.5
+        TURN_TICK_S:
+          type: number
+          description: Left/right step duration (seconds)
+          example: 0.5
+        FORWARD_SPD:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Forward speed (0..1)
+          example: 0.4
+        TURN_SPD:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Turn speed (0..1)
+          example: 0.2
+        BACK_SPD:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Backward speed (0..1)
+          example: 0.2
+        # Distance Heuristics
+        STOP_CM:
+          type: number
+          description: Distance threshold to consider too close (cm)
+          example: 15
+        CLEAR_CM:
+          type: number
+          description: Distance threshold considered clear (cm)
+          example: 30
+        MAX_DISTANCE_M:
+          type: number
+          description: Maximum measurable distance (meters)
+          example: 2.5
+        SAMPLES_PER_READ:
+          type: integer
+          minimum: 1
+          description: Sensor samples per measurement
+          example: 3
+        # Stuck detection
+        STUCK_DELTA_CM:
+          type: number
+          description: Min spread across last steps to avoid stuck (cm)
+          example: 5
+        STUCK_STEPS:
+          type: integer
+          minimum: 1
+          description: Window length for stuck detection (ticks)
+          example: 4
+        BACK_TICKS:
+          type: integer
+          minimum: 0
+          description: Number of ticks to back up when stuck
+          example: 3
+        NUDGE_TICKS:
+          type: integer
+          minimum: 0
+          description: Number of ticks to turn after backing up
+          example: 1
+        STUCK_COOLDOWN_STEPS:
+          type: integer
+          minimum: 0
+          description: Cooldown ticks after stuck routine
+          example: 4
+        # Web/IO (advanced)
+        DASHBOARD_PORT:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: Dashboard HTTP port
+          example: 8000
+    Mode:
+      type: string
+      enum: [AUTO, MANUAL, REMOTE]
+    ModeRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/Mode' }
+    Status:
+      type: object
+      properties:
+        mode: { $ref: '#/components/schemas/Mode' }
+        distance_cm:
+          type: number
+          nullable: true
+        executed_motion:
+          type: string
+          enum: [forward, backward, left, right, stop, manual, remote]
+        executed_speed:
+          type: number
+        next_motion:
+          type: string
+        next_speed:
+          type: number
+        notes:
+          type: string
+        stuck:
+          type: integer
+        queue_len:
+          type: integer
+        log_file:
+          type: string
+
+
