@@ -23,8 +23,17 @@ NUDGE_TICKS      = 1     # random turn after backoff
 STUCK_COOLDOWN_STEPS = 3
 
 # --------- Ultrasonic Pins ----------
-TRIG = 19
-ECHO = 26
+# Front sensor (using original pins)
+FRONT_TRIG = 19
+FRONT_ECHO = 26
+
+# Left sensor
+LEFT_TRIG = 6
+LEFT_ECHO = 13
+
+# Right sensor
+RIGHT_TRIG = 20
+RIGHT_ECHO = 21
 
 # --------- Web ----------
 DASHBOARD_PORT = 8000
