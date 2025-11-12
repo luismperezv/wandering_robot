@@ -66,7 +66,8 @@ def test_sensors():
                 # Print each sensor's reading
                 for name, distance in distances.items():
                     status = "OK" if distance != float('inf') else "NO ECHO"
-                    print(f"{name.upper():<10} | {distance if distance != float('inf') else 'N/A':<15.1f} | {status}")
+                    distance_str = f"{distance:.1f}" if isinstance(distance, (int, float)) and distance != float('inf') else 'N/A'
+                    print(f"{name.upper():<10} | {distance_str:<15} | {status}")
                 
                 print("=" * 50)
                 
