@@ -32,8 +32,8 @@ LEFT_TRIG = 20
 LEFT_ECHO = 21
 
 # Right sensor pins
-RIGHT_TRIG = 22
-RIGHT_ECHO = 23
+RIGHT_TRIG = 6
+RIGHT_ECHO = 13
 
 # --------- Web ----------
 DASHBOARD_PORT = 8000
