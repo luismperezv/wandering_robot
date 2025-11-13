@@ -323,10 +323,22 @@
               <rect class="wheel" x="235" y="120" width="14" height="120" rx="3" />
               <rect class="wheel" x="351" y="120" width="14" height="120" rx="3" />
             </g>
-            <!-- sensor cone: dynamic 40° sector (on top of robot) -->
-            <path id="sensorCone" class="sensor-cone" d="M 300 150 L 280 20 A 140 140 0 0 1 320 20 Z" />
-            <text id="sensorLabel" x="300" y="120" text-anchor="middle" font-size="12" fill="#cdd4ff">&gt;1m</text>
-            <circle class="sensor-dot" cx="300" cy="150" r="4"/>
+            <!-- Front sensor cone: dynamic 40° sector -->
+            <path id="sensorCone" class="sensor-cone front-cone" d="M 300 150 L 280 20 A 140 140 0 0 1 320 20 Z" />
+            <text id="sensorLabel" class="sensor-label front-label" x="300" y="120" text-anchor="middle" font-size="12" fill="#cdd4ff">&gt;1m</text>
+            
+            <!-- Left sensor cone: rotated 90° left -->
+            <path id="leftSensorCone" class="sensor-cone left-cone" d="M 275 180 L 145 160 A 140 140 0 0 1 145 200 Z" />
+            <text id="leftSensorLabel" class="sensor-label left-label" x="150" y="180" text-anchor="end" font-size="12" fill="#cdd4ff">&gt;1m</text>
+            
+            <!-- Right sensor cone: rotated 90° right -->
+            <path id="rightSensorCone" class="sensor-cone right-cone" d="M 325 180 L 455 160 A 140 140 0 0 0 455 200 Z" />
+            <text id="rightSensorLabel" class="sensor-label right-label" x="450" y="180" text-anchor="start" font-size="12" fill="#cdd4ff">&gt;1m</text>
+            
+            <!-- Sensor dots -->
+            <circle class="sensor-dot front-sensor" cx="300" cy="150" r="4"/>
+            <circle class="sensor-dot left-sensor" cx="275" cy="180" r="4"/>
+            <circle class="sensor-dot right-sensor" cx="325" cy="180" r="4"/>
           </svg>
         </div>
       </div>
@@ -576,7 +588,10 @@
         els.distanceBadge.textContent = 'caution';
         els.distanceBadge.style.color = 'var(--warn)';
       }
-      updateSensorCone(d);
+      // Update all three sensor cones with the same distance
+      updateSensorCone(d, 'front');
+      updateSensorCone(d, 'left');
+      updateSensorCone(d, 'right');
     }
 
     function setQueue(n) {
@@ -650,16 +665,35 @@
           const mode = msg.mode || 'AUTO';
           setMode(mode);
           
-          // Handle sensor data - check for front sensor distance
-          let distance = Infinity;
-          if (msg.front_distance_cm !== undefined) {
-            distance = msg.front_distance_cm;
-          } else if (msg.distance_cm !== undefined) {
-            distance = msg.distance_cm; // Fallback to old field name
+          // Handle sensor data for front, left, and right sensors
+          const distances = {
+            front: Infinity,
+            left: Infinity,
+            right: Infinity
+          };
+          
+          // Update distances from message, with fallbacks for backward compatibility
+          if (msg.front_distance_cm !== undefined || msg.distance_cm !== undefined) {
+            distances.front = msg.front_distance_cm !== undefined ? 
+              msg.front_distance_cm : msg.distance_cm;
+          }
+          
+          if (msg.left_distance_cm !== undefined) {
+            distances.left = msg.left_distance_cm;
+          }
+          
+          if (msg.right_distance_cm !== undefined) {
+            distances.right = msg.right_distance_cm;
           }
           
           if (!state.simulateDistance) {
-            setDistance(Number.isFinite(distance) ? distance : Infinity);
+            // Update all sensor cones with their respective distances
+            updateSensorCone(distances.front, 'front');
+            updateSensorCone(distances.left, 'left');
+            updateSensorCone(distances.right, 'right');
+            
+            // For backward compatibility, also update the main distance display with front sensor
+            setDistance(Number.isFinite(distances.front) ? distances.front : Infinity);
           }
           
           setMotion(msg.executed_motion || 'stop', Number(msg.executed_speed || 0));
@@ -824,23 +858,40 @@
       const rad = (angleDeg * Math.PI) / 180;
       return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
     }
-    function updateSensorCone(distanceCm) {
+    function updateSensorCone(distanceCm, coneID = 'front') {
+      // Define sensor configurations
+      const sensors = {
+        front: { cx: 300, cy: 150, baseAngle: -90, labelId: 'sensorLabel', coneId: 'sensorCone' },
+        left: { cx: 275, cy: 180, baseAngle: 180, labelId: 'leftSensorLabel', coneId: 'leftSensorCone' },
+        right: { cx: 325, cy: 180, baseAngle: 0, labelId: 'rightSensorLabel', coneId: 'rightSensorCone' }
+      };
+      
+      const sensor = sensors[coneID];
+      if (!sensor) return; // Invalid coneID
+      
       const maxCm = 100; // 1m
       const isFiniteDistance = Number.isFinite(distanceCm);
       const clamped = isFiniteDistance ? Math.max(0, Math.min(distanceCm, maxCm)) : maxCm;
       const ratio = clamped / maxCm; // 0..1
       const maxR = 140; // pixels at 1m (slightly larger for visibility)
       const r = Math.max(12, maxR * ratio);
-      const base = -90; // facing up
       const spread = 20; // 40° total
-      const a1 = base - spread;
-      const a2 = base + spread;
+      const a1 = sensor.baseAngle - spread;
+      const a2 = sensor.baseAngle + spread;
+      
       const p1 = polarToXY(sensor.cx, sensor.cy, r, a1);
       const p2 = polarToXY(sensor.cx, sensor.cy, r, a2);
+      
+      // Create the cone path - all sensors use the same arc direction (sweep flag = 1 for convex)
       let d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y} Z`;
-      const cone = document.getElementById('sensorCone');
-      const label = document.getElementById('sensorLabel');
+      
+      const cone = document.getElementById(sensor.coneId);
+      const label = document.getElementById(sensor.labelId);
+      
+      if (!cone || !label) return;
+      
       cone.setAttribute('d', d);
+      
       // Fallback: if arc bbox is zero (some browsers/flags combos), draw as triangle sector
       try {
         const bb = cone.getBBox();
@@ -849,6 +900,7 @@
           cone.setAttribute('d', d);
         }
       } catch {}
+      
       // Color: green (120) at >1m, to red (0) at 0cm
       const hue = Math.round(120 * ratio);
       const fill = `hsla(${hue}, 80%, 55%, 0.28)`;
@@ -856,10 +908,12 @@
       cone.setAttribute('fill', fill);
       cone.setAttribute('stroke', stroke);
       cone.setAttribute('stroke-width', '2');
-      // Label
-      const mid = polarToXY(sensor.cx, sensor.cy, r + 14, base);
+      
+      // Update label position and text
+      const mid = polarToXY(sensor.cx, sensor.cy, r + 14, sensor.baseAngle);
       label.setAttribute('x', String(mid.x));
       label.setAttribute('y', String(mid.y));
+      
       if (!isFiniteDistance || distanceCm >= 100) {
         label.textContent = '>1m';
       } else if (distanceCm >= 10) {
@@ -890,8 +944,10 @@
     //   dbgRange.addEventListener('input', applySim);
     // }
 
-    // Force an initial draw of the sensor cone so it's visible even before data
-    updateSensorCone(100);
+    // Force an initial draw of the sensor cones so they're visible even before data
+    updateSensorCone(100, 'front');
+    updateSensorCone(100, 'left');
+    updateSensorCone(100, 'right');
     // if (state.simulateDistance) {
     //   if (dbgSim) dbgSim.checked = true;
     //   const start = dbgRange ? Number(dbgRange.value) : 100;
