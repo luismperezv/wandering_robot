@@ -78,7 +78,12 @@ def main():
                                 samples=config.SAMPLES_PER_READ)
     }
 
-    log_file = f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # Create logs directory if it doesn't exist
+    logs_dir = os.path.join(project_root, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Create log file in the logs directory
+    log_file = os.path.join(logs_dir, f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     f = open(log_file, "w", newline="")
     writer = csv.writer(f)
     writer.writerow([
