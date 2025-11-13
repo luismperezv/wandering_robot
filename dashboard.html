@@ -649,10 +649,19 @@
           const msg = JSON.parse(ev.data);
           const mode = msg.mode || 'AUTO';
           setMode(mode);
-          const d = (typeof msg.distance_cm === 'number') ? msg.distance_cm : Infinity;
-          if (!state.simulateDistance) {
-            setDistance(Number.isFinite(d) ? d : Infinity);
+          
+          // Handle sensor data - check for front sensor distance
+          let distance = Infinity;
+          if (msg.front_distance_cm !== undefined) {
+            distance = msg.front_distance_cm;
+          } else if (msg.distance_cm !== undefined) {
+            distance = msg.distance_cm; // Fallback to old field name
           }
+          
+          if (!state.simulateDistance) {
+            setDistance(Number.isFinite(distance) ? distance : Infinity);
+          }
+          
           setMotion(msg.executed_motion || 'stop', Number(msg.executed_speed || 0));
           setQueue(Number(msg.queue_len || 0));
           setStuck(!!msg.stuck);
