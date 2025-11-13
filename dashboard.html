@@ -500,7 +500,6 @@
       stuck: false,
       logFile: 'runlog_YYYYMMDD_HHMMSS.csv',
       uptimeStart: Date.now(),
-      simulateDistance: (location.protocol === 'file:'),
       enableSSE: (location.protocol !== 'file:')
     };
     const sensor = { cx: 300, cy: 150 };
@@ -686,15 +685,13 @@
             distances.right = msg.right_distance_cm;
           }
           
-          if (!state.simulateDistance) {
-            // Update all sensor cones with their respective distances
-            updateSensorCone(distances.front, 'front');
-            updateSensorCone(distances.left, 'left');
-            updateSensorCone(distances.right, 'right');
-            
-            // For backward compatibility, also update the main distance display with front sensor
-            setDistance(Number.isFinite(distances.front) ? distances.front : Infinity);
-          }
+          // Update all sensor cones with their respective distances
+          //updateSensorCone(distances.front, 'front');
+          //updateSensorCone(distances.left, 'left');
+          //updateSensorCone(distances.right, 'right');
+          
+          // Also update the main distance display with front sensor
+          setDistance(Number.isFinite(distances.front) ? distances.front : Infinity);
           
           setMotion(msg.executed_motion || 'stop', Number(msg.executed_speed || 0));
           setQueue(Number(msg.queue_len || 0));
@@ -921,38 +918,12 @@
       } else {
         label.textContent = `${distanceCm.toFixed(1)} cm`;
       }
-      // if (state.simulateDistance) {
-      //   console.log('[SIM] distance:', distanceCm, 'r:', r.toFixed(1), 'hue:', hue, 'd:', d);
-      // }
     }
-
-    // Debug: distance simulation controls (commented out)
-    // const dbgSim = document.getElementById('dbgSim');
-    // const dbgRange = document.getElementById('dbgRange');
-    // const dbgVal = document.getElementById('dbgVal');
-    // if (dbgSim && dbgRange && dbgVal) {
-    //   const applySim = () => {
-    //     const val = Number(dbgRange.value);
-    //     dbgVal.textContent = `${val} cm`;
-    //     // Always reflect slider in the visualization; in non-sim mode SSE may later override
-    //     setDistance(val);
-    //   };
-    //   dbgSim.addEventListener('change', () => {
-    //     state.simulateDistance = dbgSim.checked;
-    //     applySim();
-    //   });
-    //   dbgRange.addEventListener('input', applySim);
-    // }
 
     // Force an initial draw of the sensor cones so they're visible even before data
     updateSensorCone(100, 'front');
     updateSensorCone(100, 'left');
     updateSensorCone(100, 'right');
-    // if (state.simulateDistance) {
-    //   if (dbgSim) dbgSim.checked = true;
-    //   const start = dbgRange ? Number(dbgRange.value) : 100;
-    //   setDistance(start);
-    // }
   </script>
   </body>
   </html>
