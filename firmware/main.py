@@ -16,7 +16,7 @@ try:
     from firmware.control.policy import decide_next_motion as default_policy
 except Exception:
     import config  # type: ignore
-    from hardware.ultrasonic import PigpioUltrasonic  # type: ignore
+    from hardware.ultrasonic import MultiUltrasonic  # type: ignore
     from web.server import start_dashboard_server  # type: ignore
     from control.keyboard import CbreakKeyboard  # type: ignore
     from control.controller import Controller  # type: ignore
