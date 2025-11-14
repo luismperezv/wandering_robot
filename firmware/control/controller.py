@@ -193,7 +193,7 @@ class Controller:
                     # Only update state if it's changed from the last broadcast
                     if not hasattr(self, '_last_idle_state') or time.time() - getattr(self, '_last_idle_time', 0) > 5.0:
                         # Get readings from all sensors
-                        distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                        distances = self.sensor.get_distances()
                         front_d = distances.get('front', float('inf'))
                         left_d = distances.get('left', float('inf'))
                         right_d = distances.get('right', float('inf'))
