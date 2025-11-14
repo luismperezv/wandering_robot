@@ -282,6 +282,13 @@ class Controller:
                 left_d = distances.get('left', float('inf'))
                 right_d = distances.get('right', float('inf'))
                 
+                # Initialize motion variables
+                if self.queued_moves:
+                    q_motion, q_speed, q_ticks = self.queued_moves[0]
+                    exec_motion, exec_speed = q_motion, q_speed
+                else:
+                    exec_motion, exec_speed = self.current_motion, self.current_speed
+                
                 # Initialize next motion and speed
                 next_motion, next_speed = exec_motion, exec_speed
                 stuck_triggered = 0
