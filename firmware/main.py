@@ -7,7 +7,7 @@ from gpiozero import CamJamKitRobot
 
 try:
     from firmware import config
-    from firmware.hardware.ultrasonic import PigpioUltrasonic
+    from firmware.hardware.ultrasonic import MultiUltrasonic
     from firmware.web.server import start_dashboard_server
     from firmware.control.keyboard import CbreakKeyboard
     from firmware.control.controller import Controller
@@ -65,25 +65,24 @@ def main():
 
     robot = CamJamKitRobot()
     
-    # Initialize all three sensors
-    sensors = {
-        'front': PigpioUltrasonic(config.FRONT_TRIG, config.FRONT_ECHO, 
-                                max_distance_m=config.MAX_DISTANCE_M, 
-                                samples=config.SAMPLES_PER_READ),
-        'left': PigpioUltrasonic(config.LEFT_TRIG, config.LEFT_ECHO,
-                               max_distance_m=config.MAX_DISTANCE_M,
-                               samples=config.SAMPLES_PER_READ),
-        'right': PigpioUltrasonic(config.RIGHT_TRIG, config.RIGHT_ECHO,
-                                max_distance_m=config.MAX_DISTANCE_M,
-                                samples=config.SAMPLES_PER_READ)
+    # Configure all three ultrasonic sensors
+    sensor_config = {
+        'front': (config.FRONT_TRIG, config.FRONT_ECHO),
+        'left': (config.LEFT_TRIG, config.LEFT_ECHO),
+        'right': (config.RIGHT_TRIG, config.RIGHT_ECHO)
     }
-
-    # Create logs directory if it doesn't exist
-    logs_dir = os.path.join(project_root, "logs")
-    os.makedirs(logs_dir, exist_ok=True)
     
-    # Create log file in the logs directory
-    log_file = os.path.join(logs_dir, f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+    # Initialize the multi-sensor system
+    sensors = MultiUltrasonic(
+        config=sensor_config,
+        max_distance_m=config.MAX_DISTANCE_M,
+        samples=config.SAMPLES_PER_READ
+    )
+    
+    # Register cleanup for proper shutdown
+    atexit.register(sensors.cleanup)
+
+    log_file = f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     f = open(log_file, "w", newline="")
     writer = csv.writer(f)
     writer.writerow([
@@ -128,7 +127,6 @@ def main():
     print("Controls: Enter=toggle MANUAL, WASD=drive. Ctrl+C to quit.")
     print(f"Logging to {log_file}.")
 
-    # Pass all sensors to the controller
     controller = Controller(robot, sensors, write_row, hub, commands_q, keyboard=kb, log_file=log_file, config_manager=cfg_mgr, policy_manager=policy_mgr)
     try:
         controller.run()

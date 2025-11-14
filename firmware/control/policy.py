@@ -24,5 +24,3 @@ def decide_next_motion(distance_cm: float, prev_motion: str) -> tuple[str, float
         return (prev_motion, config.TURN_SPD * 0.8, f"bias-{prev_motion}@{distance_cm:.1f}cm")
 
     return ("forward", config.FORWARD_SPD * 0.8, f"caution@{distance_cm:.1f}cm")
-
-
