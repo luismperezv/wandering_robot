@@ -299,48 +299,11 @@ class Controller:
                 left_d = distances.get('left', float('inf'))
                 right_d = distances.get('right', float('inf'))
                 
-                # Use front sensor for navigation and stuck detection
-                if front_d != float('inf'):
-                    self.dist_hist.append(front_d)
-
-                # policy + stuck
-                notes = ""
-                stuck_triggered = 0
-                if not self.queued_moves:
-                    if self.policy is not None:
-                        next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
-                    else:
-                        next_motion, next_speed, notes = decide_next_motion(front_d, exec_motion)
-                    
-                    # Apply speed overrides based on motion type
-                    if next_motion == "forward":
-                        next_speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
-                    elif next_motion == "backward":
-                        next_speed = float(self._cfg("BACK_SPD", config.BACK_SPD))
-                    elif next_motion in ["left", "right"]:
-                        next_speed = float(self._cfg("TURN_SPD", config.TURN_SPD))
-                    if self.stuck_cooldown > 0:
-                        self.stuck_cooldown -= 1
-                    else:
-                        if len(self.dist_hist) == config.STUCK_STEPS:
-                            spread = max(self.dist_hist) - min(self.dist_hist)
-                            if spread < config.STUCK_DELTA_CM:
-                                import random
-                                turn_dir = random.choice(["left", "right"])
-                                self.queued_moves = [
-                                    ("backward", self._cfg("BACK_SPD", config.BACK_SPD), self._cfg("BACK_TICKS", config.BACK_TICKS)),
-                                    (turn_dir,  self._cfg("TURN_SPD", config.TURN_SPD),  self._cfg("NUDGE_TICKS", config.NUDGE_TICKS)),
-                                ]
-                                notes = f"STUCK: Δ={spread:.1f}cm/{config.STUCK_STEPS}steps -> back {config.BACK_TICKS} + {turn_dir} {config.NUDGE_TICKS}"
-                                stuck_triggered = 1
-                                self.stuck_cooldown = self._cfg("STUCK_COOLDOWN_STEPS", config.STUCK_COOLDOWN_STEPS)
-                                next_motion, next_speed = ("forward", self._cfg("FORWARD_SPD", config.FORWARD_SPD))
-                                self.dist_hist.clear()
-                    self.current_motion, self.current_speed = next_motion, next_speed
-
-                # log
+                notes = f"remote_cmd_{exec_motion}" if exec_motion != "stop" else "remote_idle"
+                
+                # Log the action with all sensor readings
                 self.writer([
-                    "AUTO",
+                    "REMOTE",
                     front_d,
                     left_d,
                     right_d,

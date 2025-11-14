@@ -4,6 +4,33 @@ except Exception:
     import config  # type: ignore
 
 import random
+from collections.abc import Collection
+from typing import Tuple, Optional
+
+
+def is_robot_stuck(distance_history: Collection[float], current_motion: str, config) -> Tuple[bool, str, int]:
+    """
+    Determine if the robot is stuck based on recent distance readings.
+    
+    Args:
+        distance_history: Collection of recent distance measurements
+        current_motion: Current motion command
+        config: Configuration object with STUCK_* constants
+        
+    Returns:
+        Tuple of (is_stuck, notes, cooldown_steps)
+    """
+    if (not distance_history or 
+        current_motion not in ["forward", "backward"] or 
+        len(distance_history) < config.STUCK_STEPS):
+        return False, "", 0
+    
+    spread = max(distance_history) - min(distance_history)
+    if spread < config.STUCK_DELTA_CM:
+        notes = f"STUCK: Δ={spread:.1f}cm/{config.STUCK_STEPS}steps -> back {config.BACK_TICKS} + turn {config.NUDGE_TICKS}"
+        return True, notes, config.STUCK_COOLDOWN_STEPS
+        
+    return False, "", 0
 
 
 def decide_next_motion(distance_cm: float, prev_motion: str) -> tuple[str, float, str]:
