@@ -82,7 +82,10 @@ def main():
     # Register cleanup for proper shutdown
     atexit.register(sensors.cleanup)
 
-    log_file = f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # Create logs directory if it doesn't exist
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"runlog_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     f = open(log_file, "w", newline="")
     writer = csv.writer(f)
     writer.writerow([
