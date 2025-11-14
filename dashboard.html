@@ -686,9 +686,9 @@
           }
           
           // Update all sensor cones with their respective distances
-          //updateSensorCone(distances.front, 'front');
-          //updateSensorCone(distances.left, 'left');
-          //updateSensorCone(distances.right, 'right');
+          updateSensorCone(distances.front, 'front');
+          updateSensorCone(distances.left, 'left');
+          updateSensorCone(distances.right, 'right');
           
           // Also update the main distance display with front sensor
           setDistance(Number.isFinite(distances.front) ? distances.front : Infinity);
