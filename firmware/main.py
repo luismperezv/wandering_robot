@@ -97,10 +97,13 @@ def main():
     def write_row(row):
         # row: [mode, front_d, left_d, right_d, exec_motion, exec_speed, next_motion, next_speed, notes, stuck, qlen]
         def format_value(value, is_numeric=False):
-            if value is None or (is_numeric and value == float('inf')):
+            if value in (None, '') or (is_numeric and value == float('inf')):
                 return ""
             if is_numeric:
-                return f"{float(value):.2f}"
+                try:
+                    return f"{float(value):.2f}"
+                except (ValueError, TypeError):
+                    return ""
             return str(value)
             
         writer.writerow([

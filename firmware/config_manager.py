@@ -88,14 +88,14 @@ class ConfigManager:
             if hasattr(self, '_writer') and callable(self._writer):
                 self._writer([
                     "CONFIG",  # mode
-                    None,       # distance_cm (None for numeric field)
+                    "",        # distance_cm (empty string for numeric field)
                     "",        # executed_motion
-                    None,       # executed_speed (None for numeric field)
+                    "",        # executed_speed (empty string for numeric field)
                     "",        # next_motion
-                    None,       # next_speed (None for numeric field)
+                    "",        # next_speed (empty string for numeric field)
                     notes,     # notes
-                    0,         # stuck_triggered
-                    0          # queue_len
+                    "0",       # stuck_triggered (as string)
+                    "0"        # queue_len (as string)
                 ])
                 
         return was_cleared
