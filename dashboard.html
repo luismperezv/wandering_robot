@@ -571,26 +571,20 @@
     }
 
     function setDistance(d) {
-      state.distance = d;
-      els.cardDistance.textContent = Number.isFinite(d) ? `${d.toFixed(1)} cm` : '—';
-      els.kvDistance.textContent = Number.isFinite(d) ? `${d.toFixed(1)} cm` : '—';
-      if (!Number.isFinite(d)) {
-        els.distanceBadge.textContent = 'no echo';
-        els.distanceBadge.style.color = 'var(--muted)';
-      } else if (d <= 15) {
-        els.distanceBadge.textContent = 'too close';
-        els.distanceBadge.style.color = 'var(--err)';
-      } else if (d >= 30) {
-        els.distanceBadge.textContent = 'clear';
-        els.distanceBadge.style.color = 'var(--ok)';
+      const dist = Number.isFinite(d) ? d : Infinity;
+      els.cardDistance.textContent = dist >= 100 ? '>1m' : `${Math.round(dist)} cm`;
+      
+      // Update the distance badge
+      if (dist > 60) {
+        els.distanceBadge.textContent = 'SAFE';
+        els.distanceBadge.style.color = 'var(--success)';
+      } else if (dist > 30) {
+        els.distanceBadge.textContent = 'NEAR';
+        els.distanceBadge.style.color = 'var(--warning)';
       } else {
-        els.distanceBadge.textContent = 'caution';
+        els.distanceBadge.textContent = 'CLOSE';
         els.distanceBadge.style.color = 'var(--warn)';
       }
-      // Update all three sensor cones with the same distance
-      updateSensorCone(d, 'front');
-      updateSensorCone(d, 'left');
-      updateSensorCone(d, 'right');
     }
 
     function setQueue(n) {
