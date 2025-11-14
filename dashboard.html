@@ -858,9 +858,30 @@
     function updateSensorCone(distanceCm, coneID = 'front') {
       // Define sensor configurations
       const sensors = {
-        front: { cx: 300, cy: 150, baseAngle: -90, labelId: 'sensorLabel', coneId: 'sensorCone' },
-        left: { cx: 275, cy: 180, baseAngle: 180, labelId: 'leftSensorLabel', coneId: 'leftSensorCone' },
-        right: { cx: 325, cy: 180, baseAngle: 0, labelId: 'rightSensorLabel', coneId: 'rightSensorCone' }
+        front: { 
+          cx: 300, 
+          cy: 150, 
+          baseAngle: -90, 
+          labelId: 'sensorLabel', 
+          coneId: 'sensorCone',
+          sweepFlag: 1 // Clockwise arc
+        },
+        left: { 
+          cx: 275, 
+          cy: 180, 
+          baseAngle: 180, 
+          labelId: 'leftSensorLabel', 
+          coneId: 'leftSensorCone',
+          sweepFlag: 0 // Counter-clockwise arc
+        },
+        right: { 
+          cx: 325, 
+          cy: 180, 
+          baseAngle: 0, 
+          labelId: 'rightSensorLabel', 
+          coneId: 'rightSensorCone',
+          sweepFlag: 1 // Clockwise arc
+        }
       };
       
       const sensor = sensors[coneID];
@@ -873,14 +894,24 @@
       const maxR = 140; // pixels at 1m (slightly larger for visibility)
       const r = Math.max(12, maxR * ratio);
       const spread = 20; // 40° total
-      const a1 = sensor.baseAngle - spread;
-      const a2 = sensor.baseAngle + spread;
+      
+      // Calculate the angles for the arc
+      let a1, a2;
+      if (coneID === 'left') {
+        // For left sensor, we want to draw from bottom to top (180° to 140°)
+        a1 = sensor.baseAngle + spread; // 200°
+        a2 = sensor.baseAngle - spread; // 140°
+      } else {
+        // For front and right sensors, draw from left to right
+        a1 = sensor.baseAngle - spread;
+        a2 = sensor.baseAngle + spread;
+      }
       
       const p1 = polarToXY(sensor.cx, sensor.cy, r, a1);
       const p2 = polarToXY(sensor.cx, sensor.cy, r, a2);
       
-      // Create the cone path - all sensors use the same arc direction (sweep flag = 1 for convex)
-      let d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} A ${r} ${r} 0 0 1 ${p2.x} ${p2.y} Z`;
+      // Create the cone path with correct arc direction for each sensor
+      let d = `M ${sensor.cx} ${sensor.cy} L ${p1.x} ${p1.y} A ${r} ${r} 0 0 ${sensor.sweepFlag} ${p2.x} ${p2.y} Z`;
       
       const cone = document.getElementById(sensor.coneId);
       const label = document.getElementById(sensor.labelId);
