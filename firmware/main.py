@@ -86,7 +86,7 @@ def main():
     f = open(log_file, "w", newline="")
     writer = csv.writer(f)
     writer.writerow([
-        "timestamp_iso", "mode", "distance_cm",
+        "timestamp_iso", "mode", "front_distance_cm", "left_distance_cm", "right_distance_cm",
         "executed_motion", "executed_speed",
         "next_motion", "next_speed",
         "notes", "stuck_triggered", "queue_len"
@@ -94,27 +94,30 @@ def main():
     f.flush()
 
     def write_row(row):
-        # row: [mode, d, exec_motion, exec_speed, next_motion, next_speed, notes, stuck, qlen]
+        # row: [mode, front_d, left_d, right_d, exec_motion, exec_speed, next_motion, next_speed, notes, stuck, qlen]
         def format_value(value, is_numeric=False):
-            if value is None:
-                return ""
-            if is_numeric and value == float('inf'):
+            if value in (None, '') or (is_numeric and value == float('inf')):
                 return ""
             if is_numeric:
-                return f"{float(value):.2f}"
+                try:
+                    return f"{float(value):.2f}"
+                except (ValueError, TypeError):
+                    return ""
             return str(value)
             
         writer.writerow([
             datetime.now().isoformat(timespec="seconds"),
             row[0],  # mode
-            format_value(row[1], is_numeric=True),  # distance_cm
-            row[2],  # executed_motion
-            format_value(row[3], is_numeric=True),  # executed_speed
-            row[4],  # next_motion
-            format_value(row[5], is_numeric=True),  # next_speed
-            row[6],  # notes
-            row[7],  # stuck_triggered
-            row[8]   # queue_len
+            format_value(row[1], is_numeric=True),  # front_distance_cm
+            format_value(row[2], is_numeric=True),  # left_distance_cm
+            format_value(row[3], is_numeric=True),  # right_distance_cm
+            row[4],  # executed_motion
+            format_value(row[5], is_numeric=True),  # executed_speed
+            row[6],  # next_motion
+            format_value(row[7], is_numeric=True),  # next_speed
+            row[8],  # notes
+            row[9],  # stuck_triggered
+            row[10]  # queue_len
         ])
         f.flush()
 

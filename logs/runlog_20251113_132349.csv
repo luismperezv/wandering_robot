@@ -1,0 +1,3 @@
+timestamp_iso,mode,front_distance_cm,left_distance_cm,right_distance_cm,executed_motion,executed_speed,next_motion,next_speed,notes,stuck_triggered,queue_len
+2025-11-13T13:23:54,AUTO,29.58,40.90,53.94,stop,0.00,forward,0.70,caution@29.6cm,0,0
+2025-11-13T13:23:55,AUTO,29.67,39.36,50.85,forward,0.70,forward,0.70,caution@29.7cm,0,0

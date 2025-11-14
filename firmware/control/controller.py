@@ -34,7 +34,16 @@ def execute_motion(robot, motion: str, speed: float, duration: float):
 class Controller:
     def __init__(self, robot, sensor, logger_writer, hub, commands_q, keyboard=None, log_file="runlog.csv", config_manager: "ConfigManager | None" = None, policy_manager: "PolicyManager | None" = None):
         self.robot = robot
-        self.sensor = sensor
+        # Store all sensors in a dict
+        if isinstance(sensor, dict):
+            self.sensors = sensor
+            # For backward compatibility, keep a reference to the front sensor
+            self.sensor = sensor.get('front')
+        else:
+            # Handle case where only one sensor is passed
+            self.sensor = sensor
+            self.sensors = {'front': sensor}
+            
         self.writer = logger_writer
         self.hub = hub
         self.commands_q = commands_q
@@ -183,10 +192,17 @@ class Controller:
                 if not self.auto_mode and not self.queued_moves:
                     # Only update state if it's changed from the last broadcast
                     if not hasattr(self, '_last_idle_state') or time.time() - getattr(self, '_last_idle_time', 0) > 5.0:
-                        d = self.sensor.distance_cm()
+                        # Get readings from all sensors
+                        distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                        front_d = distances.get('front', float('inf'))
+                        left_d = distances.get('left', float('inf'))
+                        right_d = distances.get('right', float('inf'))
+                        
                         state = {
                             "mode": "REMOTE",
-                            "distance_cm": (None if d == float('inf') else round(d,2)),
+                            "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                            "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                            "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
                             "executed_motion": "stop",
                             "executed_speed": 0.0,
                             "next_motion": "idle",
@@ -210,16 +226,35 @@ class Controller:
                 if not self.auto_mode and self.queued_moves:
                     exec_motion, exec_speed, _ = self.queued_moves.pop(0)
                     execute_motion(self.robot, exec_motion, exec_speed, self._duration_for_motion(exec_motion))
-                    d = self.sensor.distance_cm()
+                    # Get readings from all sensors
+                    distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                    front_d = distances.get('front', float('inf'))
+                    left_d = distances.get('left', float('inf'))
+                    right_d = distances.get('right', float('inf'))
+                    
                     notes = f"remote_cmd_{exec_motion}" if exec_motion != "stop" else "remote_idle"
                     
-                    # Log the action
-                    self.writer(["REMOTE", d, exec_motion, exec_speed, "idle", 0.0, notes, 0, 0])
+                    # Log the action with all sensor readings
+                    self.writer([
+                        "REMOTE",
+                        front_d,
+                        left_d,
+                        right_d,
+                        exec_motion,
+                        exec_speed,
+                        "idle",
+                        0.0,
+                        notes,
+                        0,
+                        0
+                    ])
                     
                     # Broadcast the state
                     state = {
                         "mode": "REMOTE",
-                        "distance_cm": (None if d == float('inf') else round(d,2)),
+                        "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                        "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                        "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
                         "executed_motion": exec_motion,
                         "executed_speed": round(exec_speed, 2),
                         "next_motion": "idle",
@@ -258,19 +293,24 @@ class Controller:
                     else:
                         self.queued_moves[0] = (q_motion, q_speed, q_ticks)
 
-                # sensor
-                d = self.sensor.distance_cm()
-                if d != float('inf'):
-                    self.dist_hist.append(d)
+                # Get readings from all sensors
+                distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                front_d = distances.get('front', float('inf'))
+                left_d = distances.get('left', float('inf'))
+                right_d = distances.get('right', float('inf'))
+                
+                # Use front sensor for navigation and stuck detection
+                if front_d != float('inf'):
+                    self.dist_hist.append(front_d)
 
                 # policy + stuck
                 notes = ""
                 stuck_triggered = 0
                 if not self.queued_moves:
                     if self.policy is not None:
-                        next_motion, next_speed, notes = self.policy.decide_next_motion(d, exec_motion)
+                        next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
                     else:
-                        next_motion, next_speed, notes = decide_next_motion(d, exec_motion)
+                        next_motion, next_speed, notes = decide_next_motion(front_d, exec_motion)
                     
                     # Apply speed overrides based on motion type
                     if next_motion == "forward":
@@ -299,27 +339,50 @@ class Controller:
                     self.current_motion, self.current_speed = next_motion, next_speed
 
                 # log
-                self.writer(["AUTO", d, exec_motion, exec_speed, (self.queued_moves[0][0] if self.queued_moves else self.current_motion), (self.queued_moves[0][1] if self.queued_moves else self.current_speed), notes, stuck_triggered, len(self.queued_moves)])
+                self.writer([
+                    "AUTO",
+                    front_d,
+                    left_d,
+                    right_d,
+                    exec_motion,
+                    exec_speed,
+                    next_motion if not self.queued_moves else self.queued_moves[0][0],
+                    next_speed if not self.queued_moves else self.queued_moves[0][1],
+                    notes,
+                    stuck_triggered,
+                    len(self.queued_moves)
+                ])
                 # broadcast
-                # Let _broadcast handle the mode based on auto_mode
-                self._broadcast({
-                    "distance_cm": (None if d == float('inf') else round(d,2)),
+                # Broadcast the state with all sensor readings
+                # Get fresh sensor readings
+                distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                front_d = distances.get('front', float('inf'))
+                left_d = distances.get('left', float('inf'))
+                right_d = distances.get('right', float('inf'))
+                
+                state = {
+                    "mode": "AUTO" if self.auto_mode else "REMOTE",
+                    "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                    "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                    "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
                     "executed_motion": exec_motion,
-                    "executed_speed": round(exec_speed,2),
-                    "next_motion": (self.queued_moves[0][0] if self.queued_moves else self.current_motion),
-                    "next_speed": (self.queued_moves[0][1] if self.queued_moves else self.current_speed),
+                    "executed_speed": round(exec_speed, 2),
+                    "next_motion": (next_motion if not self.queued_moves else self.queued_moves[0][0]),
+                    "next_speed": (next_speed if not self.queued_moves else self.queued_moves[0][1]),
                     "notes": notes,
                     "stuck": stuck_triggered,
                     "queue_len": len(self.queued_moves),
                     "log_file": self.log_file,
-                })
-                # status snapshot for /api/status
+                }
+                self._broadcast(state)
                 try:
                     self.hub.set_state({
                         "mode": "AUTO" if self.auto_mode else "REMOTE",
-                        "distance_cm": (None if d == float('inf') else round(d,2)),
+                        "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                        "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                        "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
                         "executed_motion": exec_motion,
-                        "executed_speed": round(exec_speed,2),
+                        "executed_speed": round(exec_speed, 2),
                         "next_motion": (self.queued_moves[0][0] if self.queued_moves else self.current_motion),
                         "next_speed": (self.queued_moves[0][1] if self.queued_moves else self.current_speed),
                         "notes": notes,
