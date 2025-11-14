@@ -665,31 +665,21 @@
             right: Infinity
           };
           
-          console.log('Raw message data:', msg);
-          
           // Update distances from message, with fallbacks for backward compatibility
           if (msg.front_distance_cm !== undefined || msg.distance_cm !== undefined) {
             distances.front = msg.front_distance_cm !== undefined ? 
               msg.front_distance_cm : msg.distance_cm;
-            console.log('Front distance set to:', distances.front);
           }
           
           if (msg.left_distance_cm !== undefined) {
             distances.left = msg.left_distance_cm;
-            console.log('Left distance set to:', distances.left);
-          } else {
-            console.log('No left_distance_cm in message, using default');
           }
           
           if (msg.right_distance_cm !== undefined) {
             distances.right = msg.right_distance_cm;
-            console.log('Right distance set to:', distances.right);
-          } else {
-            console.log('No right_distance_cm in message, using default');
           }
           
           // Update all sensor cones with their respective distances
-          console.log('Sensor distances:', { front: distances.front, left: distances.left, right: distances.right });
           updateSensorCone(distances.front, 'front');
           updateSensorCone(distances.left, 'left');
           updateSensorCone(distances.right, 'right');
@@ -860,7 +850,6 @@
       return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
     }
     function updateSensorCone(distanceCm, coneID = 'front') {
-      console.log(`Updating ${coneID} sensor with distance:`, distanceCm);
       // Define sensor configurations
       const sensors = {
         front: { 

@@ -360,8 +360,6 @@ class Controller:
                 left_d = distances.get('left', float('inf'))
                 right_d = distances.get('right', float('inf'))
                 
-                print(f"[DEBUG] Sensor readings - Front: {front_d:.1f}cm, Left: {left_d:.1f}cm, Right: {right_d:.1f}cm")
-                
                 state = {
                     "mode": "AUTO" if self.auto_mode else "REMOTE",
                     "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
@@ -376,7 +374,6 @@ class Controller:
                     "queue_len": len(self.queued_moves),
                     "log_file": self.log_file,
                 }
-                print(f"[DEBUG] Sending to dashboard: {state}")
                 self._broadcast(state)
                 try:
                     self.hub.set_state({
