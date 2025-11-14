@@ -276,42 +276,73 @@ class Controller:
                     time.sleep(0.1)
                     continue
                     
-                if self.queued_moves:
-                    q_motion, q_speed, q_ticks = self.queued_moves[0]
-                    exec_motion, exec_speed = q_motion, q_speed
-                else:
-                    exec_motion, exec_speed = self.current_motion, self.current_speed
-
-                execute_motion(self.robot, exec_motion, exec_speed, self._duration_for_motion(exec_motion))
-
-                # decrement macro ticks
-                if self.queued_moves:
-                    q_motion, q_speed, q_ticks = self.queued_moves[0]
-                    q_ticks -= 1
-                    if q_ticks <= 0:
-                        self.queued_moves.pop(0)
-                    else:
-                        self.queued_moves[0] = (q_motion, q_speed, q_ticks)
-
-                # Get readings from all sensors
+                # Get sensor readings for decision making
                 distances = self.sensor.get_distances()
                 front_d = distances.get('front', float('inf'))
                 left_d = distances.get('left', float('inf'))
                 right_d = distances.get('right', float('inf'))
                 
-                notes = f"remote_cmd_{exec_motion}" if exec_motion != "stop" else "remote_idle"
+                # Initialize next motion and speed
+                next_motion, next_speed = exec_motion, exec_speed
+                stuck_triggered = 0
+                
+                # Only make decisions if we don't have queued moves
+                if not self.queued_moves and self.policy is not None:
+                    # Get the next motion from the policy
+                    next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
+                    
+                    # Check for stuck condition
+                    if hasattr(self.policy, 'is_robot_stuck') and self.stuck_cooldown <= 0:
+                        is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
+                            self.dist_hist,
+                            next_motion,
+                            config
+                        )
+                        
+                        if is_stuck:
+                            turn_dir = random.choice(["left", "right"])
+                            self.queued_moves = [
+                                ("backward", self._cfg("BACK_SPD", config.BACK_SPD), self._cfg("BACK_TICKS", config.BACK_TICKS)),
+                                (turn_dir, self._cfg("TURN_SPD", config.TURN_SPD), self._cfg("NUDGE_TICKS", config.NUDGE_TICKS)),
+                            ]
+                            notes = stuck_notes
+                            stuck_triggered = 1
+                            self.stuck_cooldown = cooldown
+                            next_motion, next_speed = ("forward", self._cfg("FORWARD_SPD", config.FORWARD_SPD))
+                            self.dist_hist.clear()
+                
+                # Update current motion and speed
+                self.current_motion, self.current_speed = next_motion, next_speed
+                
+                # Execute the motion
+                execute_motion(self.robot, self.current_motion, self.current_speed, 
+                             self._duration_for_motion(self.current_motion))
+                
+                # Update distance history for stuck detection
+                if front_d != float('inf'):
+                    self.dist_hist.append(front_d)
+                
+                # Decrement stuck cooldown if needed
+                if self.stuck_cooldown > 0:
+                    self.stuck_cooldown -= 1
+                
+                # Get fresh sensor readings for logging
+                distances = self.sensor.get_distances()
+                front_d = distances.get('front', float('inf'))
+                left_d = distances.get('left', float('inf'))
+                right_d = distances.get('right', float('inf'))
                 
                 # Log the action with all sensor readings
                 self.writer([
-                    "REMOTE",
+                    "AUTO",
                     front_d,
                     left_d,
                     right_d,
-                    exec_motion,
-                    exec_speed,
-                    next_motion if not self.queued_moves else self.queued_moves[0][0],
-                    next_speed if not self.queued_moves else self.queued_moves[0][1],
-                    notes,
+                    self.current_motion,
+                    self.current_speed,
+                    self.queued_moves[0][0] if self.queued_moves else self.current_motion,
+                    self.queued_moves[0][1] if self.queued_moves else self.current_speed,
+                    notes if 'notes' in locals() else "auto",
                     stuck_triggered,
                     len(self.queued_moves)
                 ])
