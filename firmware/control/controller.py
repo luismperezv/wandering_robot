@@ -227,7 +227,7 @@ class Controller:
                     exec_motion, exec_speed, _ = self.queued_moves.pop(0)
                     execute_motion(self.robot, exec_motion, exec_speed, self._duration_for_motion(exec_motion))
                     # Get readings from all sensors
-                    distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                    distances = self.sensor.get_distances()
                     front_d = distances.get('front', float('inf'))
                     left_d = distances.get('left', float('inf'))
                     right_d = distances.get('right', float('inf'))
@@ -294,7 +294,7 @@ class Controller:
                         self.queued_moves[0] = (q_motion, q_speed, q_ticks)
 
                 # Get readings from all sensors
-                distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                distances = self.sensor.get_distances()
                 front_d = distances.get('front', float('inf'))
                 left_d = distances.get('left', float('inf'))
                 right_d = distances.get('right', float('inf'))
@@ -355,7 +355,7 @@ class Controller:
                 # broadcast
                 # Broadcast the state with all sensor readings
                 # Get fresh sensor readings
-                distances = {name: s.distance_cm() for name, s in self.sensors.items()}
+                distances = self.sensor.get_distances()
                 front_d = distances.get('front', float('inf'))
                 left_d = distances.get('left', float('inf'))
                 right_d = distances.get('right', float('inf'))
