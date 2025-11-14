@@ -11,7 +11,7 @@ def decide_next_motion(distance_cm: float, prev_motion: str) -> tuple[str, float
     Autonomous policy: returns (next_motion, speed, notes)
     """
     if distance_cm == float('inf'):
-        return ("forward", config.FORWARD_SPD, "no-echo/open")
+        return ("stop", 0.0, "no-echo/open: waiting for valid reading")
 
     if distance_cm <= config.STOP_CM:
         direction = random.choice(["left", "right"])
