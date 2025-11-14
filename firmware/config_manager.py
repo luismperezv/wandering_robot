@@ -65,14 +65,16 @@ class ConfigManager:
                 # Log the config change in the CSV
                 self._writer([
                     "CONFIG",  # mode
-                    None,       # distance_cm (None for numeric field)
+                    "",        # front_distance_cm
+                    "",        # left_distance_cm
+                    "",        # right_distance_cm
                     "",        # executed_motion
-                    None,       # executed_speed (None for numeric field)
+                    "",        # executed_speed
                     "",        # next_motion
-                    None,       # next_speed (None for numeric field)
+                    "",        # next_speed
                     notes,     # notes
-                    0,         # stuck_triggered
-                    0          # queue_len
+                    "0",       # stuck_triggered
+                    "0"        # queue_len
                 ])
                 
         return changes
@@ -88,14 +90,16 @@ class ConfigManager:
             if hasattr(self, '_writer') and callable(self._writer):
                 self._writer([
                     "CONFIG",  # mode
-                    "",        # distance_cm (empty string for numeric field)
+                    "",        # front_distance_cm
+                    "",        # left_distance_cm
+                    "",        # right_distance_cm
                     "",        # executed_motion
-                    "",        # executed_speed (empty string for numeric field)
+                    "",        # executed_speed
                     "",        # next_motion
-                    "",        # next_speed (empty string for numeric field)
+                    "",        # next_speed
                     notes,     # notes
-                    "0",       # stuck_triggered (as string)
-                    "0"        # queue_len (as string)
+                    "0",       # stuck_triggered
+                    "0"        # queue_len
                 ])
                 
         return was_cleared
