@@ -372,9 +372,11 @@ class Controller:
                 try:
                     self.hub.set_state({
                         "mode": "AUTO" if self.auto_mode else "REMOTE",
-                        "distance_cm": (None if d == float('inf') else round(d,2)),
+                        "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                        "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                        "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
                         "executed_motion": exec_motion,
-                        "executed_speed": round(exec_speed,2),
+                        "executed_speed": round(exec_speed, 2),
                         "next_motion": (self.queued_moves[0][0] if self.queued_moves else self.current_motion),
                         "next_speed": (self.queued_moves[0][1] if self.queued_moves else self.current_speed),
                         "notes": notes,
