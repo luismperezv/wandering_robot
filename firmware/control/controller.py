@@ -292,6 +292,7 @@ class Controller:
                 # Initialize next motion and speed
                 next_motion, next_speed = exec_motion, exec_speed
                 stuck_triggered = 0
+                notes = "auto"  # Default notes value
                 
                 # Only make decisions if we don't have queued moves
                 if not self.queued_moves and self.policy is not None:
