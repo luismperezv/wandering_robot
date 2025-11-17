@@ -299,10 +299,14 @@ class Controller:
                 if self.policy is not None:
                     next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
                     
-                    # Check for stuck condition if we're not in cooldown
+                    # Check for stuck condition if we're not in cooldown and have enough history
                     if (hasattr(self.policy, 'is_robot_stuck') and 
                         self.stuck_cooldown <= 0 and 
                         len(self.dist_hist) == config.STUCK_STEPS):
+                        
+                        # Calculate spread for debug output
+                        recent = list(self.dist_hist)[-config.STUCK_STEPS:]
+                        spread = max(recent) - min(recent)
                         
                         is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
                             self.dist_hist,
@@ -325,9 +329,10 @@ class Controller:
                                 self.dist_hist = deque(list(self.dist_hist)[-config.STUCK_STEPS:])
                             # Add debug info to notes
                             stuck_debug = f" [STUCK_DETECTED]"
+                            print(f"\n{'*'*60}\nSTUCK DETECTED! Executing recovery maneuver.\n{'*'*60}\n")
                         else:
                             stuck_debug = f" [STUCK_CHECK: spread={spread:.1f}cm >= {config.STUCK_DELTA_CM}cm]"
-                    elif hasattr(self.policy, 'is_robot_stuck') and next_motion in ["forward", "backward"]:
+                    elif hasattr(self.policy, 'is_robot_stuck'):
                         stuck_debug = f" [STUCK_CHECK: cooldown={self.stuck_cooldown}, history={len(self.dist_hist)}/{config.STUCK_STEPS}]"
                     
                     # Add debug info to notes if we have any
