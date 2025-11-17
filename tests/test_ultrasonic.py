@@ -10,42 +10,30 @@ import os
 # Add parent directory to path to import from firmware
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from firmware.hardware.ultrasonic import PigpioUltrasonic
+from firmware.hardware.ultrasonic import MultiUltrasonic, UltrasonicSensor
 from firmware import config
 
 def test_sensors():
-    # Initialize each sensor separately
     print("Initializing ultrasonic sensors...")
     
-    # Front sensor
-    front_sensor = PigpioUltrasonic(
-        trig=config.FRONT_TRIG,
-        echo=config.FRONT_ECHO,
-        max_distance_m=config.MAX_DISTANCE_M,
-        samples=3
-    )
-    
-    # Left sensor
-    left_sensor = PigpioUltrasonic(
-        trig=config.LEFT_TRIG,
-        echo=config.LEFT_ECHO,
-        max_distance_m=config.MAX_DISTANCE_M,
-        samples=3
-    )
-    
-    # Right sensor
-    right_sensor = PigpioUltrasonic(
-        trig=config.RIGHT_TRIG,
-        echo=config.RIGHT_ECHO,
-        max_distance_m=config.MAX_DISTANCE_M,
-        samples=3
-    )
-    
-    sensors = {
-        'front': front_sensor,
-        'left': left_sensor,
-        'right': right_sensor
+    # Sensor configuration
+    sensor_config = {
+        'front': (config.FRONT_TRIG, config.FRONT_ECHO),
+        'left': (config.LEFT_TRIG, config.LEFT_ECHO),
+        'right': (config.RIGHT_TRIG, config.RIGHT_ECHO)
     }
+    
+    # Initialize MultiUltrasonic with all sensors
+    try:
+        sensors = MultiUltrasonic(
+            config=sensor_config,
+            max_distance_m=config.MAX_DISTANCE_M,
+            samples=3
+        )
+    except RuntimeError as e:
+        print(f"Error initializing sensors: {e}")
+        print("Make sure the pigpio daemon is running (sudo pigpiod -g -l)")
+        return
     
     try:
         print("Ultrasonic sensor test started. Press Ctrl+C to exit.")
@@ -54,9 +42,7 @@ def test_sensors():
         while True:
             try:
                 # Get distances from all sensors
-                distances = {}
-                for name, sensor in sensors.items():
-                    distances[name] = sensor.distance_cm()
+                distances = sensors.get_distances()
                 
                 # Print header
                 print("\n" + "=" * 50)
@@ -84,11 +70,10 @@ def test_sensors():
     finally:
         # Clean up
         print("Cleaning up...")
-        for sensor in sensors.values():
-            try:
-                sensor.close()
-            except Exception as e:
-                print(f"Error cleaning up sensor: {e}")
+        try:
+            sensors.cleanup()
+        except Exception as e:
+            print(f"Error cleaning up sensors: {e}")
         print("Test completed.")
 
 if __name__ == "__main__":
