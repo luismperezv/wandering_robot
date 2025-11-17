@@ -319,6 +319,11 @@ class Controller:
                         print(f"- next_motion: {next_motion}")
                         print(f"- config.STUCK_STEPS: {config.STUCK_STEPS}")
                         
+                        # Initialize variables with default values
+                        is_stuck = False
+                        stuck_notes = ""
+                        cooldown = 0
+                        
                         # Only check for stuck when we have enough history
                         if len(self.dist_hist) >= config.STUCK_STEPS and self.stuck_cooldown <= 0:
                             print("\n[CONTROLLER] Calling is_robot_stuck")
@@ -332,8 +337,6 @@ class Controller:
                             )
                             
                             print(f"[CONTROLLER] is_robot_stuck returned: is_stuck={is_stuck}, notes={stuck_notes}, cooldown={cooldown}")
-                        
-                        print(f"[CONTROLLER] is_robot_stuck returned: is_stuck={is_stuck}, notes={stuck_notes}, cooldown={cooldown}")
                         
                         if is_stuck:
                             turn_dir = random.choice(["left", "right"])
