@@ -20,10 +20,17 @@ def is_robot_stuck(distance_history: Collection[float], next_motion: str, config
     Returns:
         Tuple of (is_stuck, notes, cooldown_steps)
     """
+    # Debug: Print the conditions being checked
+    print(f"[DEBUG is_robot_stuck] Checking conditions:")
+    print(f"- distance_history exists: {bool(distance_history)}")
+    print(f"- len(distance_history) == config.STUCK_STEPS: {len(distance_history) if distance_history else 0} == {config.STUCK_STEPS}")
+    print(f"- next_motion in ['forward', 'backward']: {next_motion} in {['forward', 'backward']} = {next_motion in ['forward', 'backward']}")
+    
     # Only check when we have exactly STUCK_STEPS measurements and are about to move forward/backward
     if (not distance_history or 
         len(distance_history) != config.STUCK_STEPS or
         next_motion not in ["forward", "backward"]):
+        print("[DEBUG is_robot_stuck] Conditions not met, returning False")
         return False, "", 0
     
     # Get the readings (should be exactly STUCK_STEPS long)

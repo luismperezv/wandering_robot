@@ -300,13 +300,19 @@ class Controller:
                     next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
                     
                     # Check for stuck condition if we're not in cooldown and have enough history
-                    if (hasattr(self.policy, 'is_robot_stuck') and 
-                        self.stuck_cooldown <= 0 and 
-                        len(self.dist_hist) == config.STUCK_STEPS):
+                    if hasattr(self.policy, 'is_robot_stuck'):
+                        print(f"\n[DEBUG] Stuck check conditions:")
+                        print(f"- has is_robot_stuck: {hasattr(self.policy, 'is_robot_stuck')}")
+                        print(f"- stuck_cooldown: {self.stuck_cooldown} (<= 0: {self.stuck_cooldown <= 0})")
+                        print(f"- dist_hist length: {len(self.dist_hist)} (== {config.STUCK_STEPS}: {len(self.dist_hist) == config.STUCK_STEPS})")
                         
-                        # Calculate spread for debug output
-                        recent = list(self.dist_hist)[-config.STUCK_STEPS:]
-                        spread = max(recent) - min(recent)
+                        if self.stuck_cooldown <= 0 and len(self.dist_hist) == config.STUCK_STEPS:
+                            # Calculate spread for debug output
+                            recent = list(self.dist_hist)[-config.STUCK_STEPS:]
+                            spread = max(recent) - min(recent)
+                            print(f"- Next motion from policy: {next_motion}")
+                            print(f"- Recent distances: {recent}")
+                            print(f"- Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
                         
                         is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
                             self.dist_hist,
