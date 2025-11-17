@@ -293,15 +293,15 @@ class Controller:
                 next_motion, next_speed = exec_motion, exec_speed
                 stuck_triggered = 0
                 notes = "auto"  # Default notes value
+                stuck_debug = ""  # To store debug info about stuck detection
                 
                 # Always get the next motion from the policy, even if we have queued moves
                 if self.policy is not None:
                     next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
                     
-                    # Check for stuck condition if we're not in cooldown and moving forward/backward
+                    # Check for stuck condition if we're not in cooldown
                     if (hasattr(self.policy, 'is_robot_stuck') and 
                         self.stuck_cooldown <= 0 and 
-                        next_motion in ["forward", "backward"] and
                         len(self.dist_hist) >= config.STUCK_STEPS):
                         
                         is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
@@ -323,6 +323,16 @@ class Controller:
                             # Keep some history to prevent rapid re-triggering
                             if len(self.dist_hist) > config.STUCK_STEPS:
                                 self.dist_hist = deque(list(self.dist_hist)[-config.STUCK_STEPS:])
+                            # Add debug info to notes
+                            stuck_debug = f" [STUCK_DETECTED]"
+                        else:
+                            stuck_debug = f" [STUCK_CHECK: spread={spread:.1f}cm >= {config.STUCK_DELTA_CM}cm]"
+                    elif hasattr(self.policy, 'is_robot_stuck') and next_motion in ["forward", "backward"]:
+                        stuck_debug = f" [STUCK_CHECK: cooldown={self.stuck_cooldown}, history={len(self.dist_hist)}/{config.STUCK_STEPS}]"
+                    
+                    # Add debug info to notes if we have any
+                    if stuck_debug:
+                        notes = (notes + stuck_debug)[:200]  # Limit length to prevent log bloat
                 
                 # Update current motion and speed
                 self.current_motion, self.current_speed = next_motion, next_speed
@@ -332,11 +342,17 @@ class Controller:
                              self._duration_for_motion(self.current_motion))
                 
                 # Update distance history for stuck detection - only when moving forward/backward
-                if front_d != float('inf') and self.current_motion in ["forward", "backward"]:
+                if front_d != float('inf'):
                     self.dist_hist.append(front_d)
-                    # Keep history size manageable but keep some extra context
+                    # Keep history size manageable
                     if len(self.dist_hist) > config.STUCK_STEPS * 2:  # Keep some extra history
                         self.dist_hist.popleft()
+                    
+                    # Debug: Print current history
+                    if len(self.dist_hist) >= config.STUCK_STEPS:
+                        recent = list(self.dist_hist)[-config.STUCK_STEPS:]
+                        spread = max(recent) - min(recent)
+                        print(f"[HISTORY] Recent: {recent}, Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
                 
                 # Decrement stuck cooldown if needed
                 if self.stuck_cooldown > 0:
