@@ -20,34 +20,26 @@ def is_robot_stuck(distance_history: Collection[float], current_motion: str, con
     Returns:
         Tuple of (is_stuck, notes, cooldown_steps)
     """
-    # Only check when we have at least STUCK_STEPS measurements
-    if not distance_history or len(distance_history) < config.STUCK_STEPS:
+    # Only check when we have exactly STUCK_STEPS measurements
+    if not distance_history or len(distance_history) != config.STUCK_STEPS:
         return False, "", 0
     
-    # Get the last STUCK_STEPS readings
-    recent_readings = list(distance_history)[-config.STUCK_STEPS:]
+    # Get the readings (should be exactly STUCK_STEPS long)
+    readings = list(distance_history)
     
-    # Calculate the spread and average of the most recent distance measurements
-    spread = max(recent_readings) - min(recent_readings)
-    avg_distance = sum(recent_readings) / len(recent_readings)
+    # Calculate the spread of the readings
+    spread = max(readings) - min(readings)
     
-    # Calculate the percentage change from the average
-    max_change = max(abs(r - avg_distance) for r in recent_readings)
-    percent_change = (max_change / avg_distance * 100) if avg_distance > 0 else 100
-    
-    # Debug print to help diagnose issues - make it very visible
-    print("\n" + "="*80)
-    print(f"[STUCK_DEBUG] Motion: {current_motion}")
-    print(f"Recent distances: {[f'{r:.1f}' for r in recent_readings]}")
+    # Debug output
+    print("\n" + "="*60)
+    print(f"[STUCK_CHECK] Motion: {current_motion}")
+    print(f"Last {config.STUCK_STEPS} readings: {[f'{r:.1f}' for r in readings]}")
     print(f"Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
-    print(f"Average: {avg_distance:.1f}cm, Max change: {max_change:.1f}cm ({percent_change:.1f}%)")
-    print("="*80 + "\n")
+    print("="*60 + "\n")
     
-    # If the spread is too small and we have a reasonable distance reading
-    if spread < config.STUCK_DELTA_CM and avg_distance > 10:  # Ignore if too close to an object
-        notes = (f"STUCK: Δ={spread:.1f}cm/{config.STUCK_STEPS}steps "
-                f"(avg={avg_distance:.1f}cm, maxΔ={max_change:.1f}cm) -> "
-                f"back {config.BACK_TICKS} + turn {config.NUDGE_TICKS}")
+    # If the spread is too small, we're not moving much
+    if spread < config.STUCK_DELTA_CM:
+        notes = f"STUCK: Δ={spread:.1f}cm/{config.STUCK_STEPS}steps -> back {config.BACK_TICKS} + turn {config.NUDGE_TICKS}"
         return True, notes, config.STUCK_COOLDOWN_STEPS
     
     return False, "", 0

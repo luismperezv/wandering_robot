@@ -302,7 +302,7 @@ class Controller:
                     # Check for stuck condition if we're not in cooldown
                     if (hasattr(self.policy, 'is_robot_stuck') and 
                         self.stuck_cooldown <= 0 and 
-                        len(self.dist_hist) >= config.STUCK_STEPS):
+                        len(self.dist_hist) == config.STUCK_STEPS):
                         
                         is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
                             self.dist_hist,
@@ -341,18 +341,19 @@ class Controller:
                 execute_motion(self.robot, self.current_motion, self.current_speed, 
                              self._duration_for_motion(self.current_motion))
                 
-                # Update distance history for stuck detection - only when moving forward/backward
+                # Update distance history for stuck detection
                 if front_d != float('inf'):
+                    # Add new reading and ensure we only keep STUCK_STEPS readings
                     self.dist_hist.append(front_d)
-                    # Keep history size manageable
-                    if len(self.dist_hist) > config.STUCK_STEPS * 2:  # Keep some extra history
+                    if len(self.dist_hist) > config.STUCK_STEPS:
                         self.dist_hist.popleft()
                     
-                    # Debug: Print current history
-                    if len(self.dist_hist) >= config.STUCK_STEPS:
-                        recent = list(self.dist_hist)[-config.STUCK_STEPS:]
+                    # Print debug info when we have a full history
+                    if len(self.dist_hist) == config.STUCK_STEPS:
+                        recent = list(self.dist_hist)
                         spread = max(recent) - min(recent)
-                        print(f"[HISTORY] Recent: {recent}, Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
+                        print(f"[DIST_HIST] Last {config.STUCK_STEPS} readings: {[f'{x:.1f}' for x in recent]}")
+                        print(f"[STUCK_CHECK] Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
                 
                 # Decrement stuck cooldown if needed
                 if self.stuck_cooldown > 0:
