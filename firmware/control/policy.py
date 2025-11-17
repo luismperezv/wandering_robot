@@ -20,14 +20,20 @@ def is_robot_stuck(distance_history: Collection[float], current_motion: str, con
     Returns:
         Tuple of (is_stuck, notes, cooldown_steps)
     """
-    # Only check when we have exactly STUCK_STEPS measurements
+    # Only check when we have at least STUCK_STEPS measurements
     if (not distance_history or 
         current_motion not in ["forward", "backward"] or 
-        len(distance_history) != config.STUCK_STEPS):
+        len(distance_history) < config.STUCK_STEPS):
         return False, "", 0
     
-    # Calculate the spread of distance measurements
-    spread = max(distance_history) - min(distance_history)
+    # Get the last STUCK_STEPS readings
+    recent_readings = list(distance_history)[-config.STUCK_STEPS:]
+    
+    # Calculate the spread of the most recent distance measurements
+    spread = max(recent_readings) - min(recent_readings)
+    
+    # Debug print to help diagnose issues
+    print(f"Stuck check - recent: {recent_readings}, spread: {spread:.1f}cm")
     
     # If the spread is too small, we're not moving much
     if spread < config.STUCK_DELTA_CM:

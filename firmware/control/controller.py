@@ -294,13 +294,16 @@ class Controller:
                 stuck_triggered = 0
                 notes = "auto"  # Default notes value
                 
-                # Only make decisions if we don't have queued moves
-                if not self.queued_moves and self.policy is not None:
-                    # Get the next motion from the policy
+                # Always get the next motion from the policy, even if we have queued moves
+                if self.policy is not None:
                     next_motion, next_speed, notes = self.policy.decide_next_motion(front_d, exec_motion)
                     
-                    # Check for stuck condition
-                    if hasattr(self.policy, 'is_robot_stuck') and self.stuck_cooldown <= 0:
+                    # Check for stuck condition if we're not in cooldown and moving forward/backward
+                    if (hasattr(self.policy, 'is_robot_stuck') and 
+                        self.stuck_cooldown <= 0 and 
+                        next_motion in ["forward", "backward"] and
+                        len(self.dist_hist) >= config.STUCK_STEPS):
+                        
                         is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
                             self.dist_hist,
                             next_motion,
@@ -317,7 +320,9 @@ class Controller:
                             stuck_triggered = 1
                             self.stuck_cooldown = cooldown
                             next_motion, next_speed = ("forward", self._cfg("FORWARD_SPD", config.FORWARD_SPD))
-                            self.dist_hist.clear()
+                            # Keep some history to prevent rapid re-triggering
+                            if len(self.dist_hist) > config.STUCK_STEPS:
+                                self.dist_hist = deque(list(self.dist_hist)[-config.STUCK_STEPS:])
                 
                 # Update current motion and speed
                 self.current_motion, self.current_speed = next_motion, next_speed
@@ -326,9 +331,12 @@ class Controller:
                 execute_motion(self.robot, self.current_motion, self.current_speed, 
                              self._duration_for_motion(self.current_motion))
                 
-                # Update distance history for stuck detection
-                if front_d != float('inf'):
+                # Update distance history for stuck detection - only when moving forward/backward
+                if front_d != float('inf') and self.current_motion in ["forward", "backward"]:
                     self.dist_hist.append(front_d)
+                    # Keep history size manageable but keep some extra context
+                    if len(self.dist_hist) > config.STUCK_STEPS * 2:  # Keep some extra history
+                        self.dist_hist.popleft()
                 
                 # Decrement stuck cooldown if needed
                 if self.stuck_cooldown > 0:
