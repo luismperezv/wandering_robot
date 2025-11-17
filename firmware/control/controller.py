@@ -314,11 +314,18 @@ class Controller:
                             print(f"- Recent distances: {recent}")
                             print(f"- Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
                         
+                        print("\n[CONTROLLER] About to call is_robot_stuck")
+                        print(f"- self.dist_hist: {list(self.dist_hist)}")
+                        print(f"- next_motion: {next_motion}")
+                        print(f"- config.STUCK_STEPS: {config.STUCK_STEPS}")
+                        
                         is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
                             self.dist_hist,
                             next_motion,
                             config
                         )
+                        
+                        print(f"[CONTROLLER] is_robot_stuck returned: is_stuck={is_stuck}, notes={stuck_notes}, cooldown={cooldown}")
                         
                         if is_stuck:
                             turn_dir = random.choice(["left", "right"])
