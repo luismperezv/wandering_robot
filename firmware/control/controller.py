@@ -323,6 +323,7 @@ class Controller:
                         is_stuck = False
                         stuck_notes = ""
                         cooldown = 0
+                        spread = 0.0  # Initialize spread with a default value
                         
                         # Only check for stuck when we have enough history
                         if len(self.dist_hist) >= config.STUCK_STEPS and self.stuck_cooldown <= 0:
