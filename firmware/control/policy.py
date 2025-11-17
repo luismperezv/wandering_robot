@@ -8,22 +8,22 @@ from collections.abc import Collection
 from typing import Tuple, Optional
 
 
-def is_robot_stuck(distance_history: Collection[float], current_motion: str, config) -> Tuple[bool, str, int]:
+def is_robot_stuck(distance_history: Collection[float], next_motion: str, config) -> Tuple[bool, str, int]:
     """
     Determine if the robot is stuck based on recent distance readings.
     
     Args:
         distance_history: Collection of recent distance measurements
-        current_motion: Current motion command
+        next_motion: Next planned motion command
         config: Configuration object with STUCK_* constants
         
     Returns:
         Tuple of (is_stuck, notes, cooldown_steps)
     """
-    # Only check when we have exactly STUCK_STEPS measurements and are moving forward/backward
+    # Only check when we have exactly STUCK_STEPS measurements and are about to move forward/backward
     if (not distance_history or 
         len(distance_history) != config.STUCK_STEPS or
-        current_motion not in ["forward", "backward"]):
+        next_motion not in ["forward", "backward"]):
         return False, "", 0
     
     # Get the readings (should be exactly STUCK_STEPS long)
@@ -34,7 +34,7 @@ def is_robot_stuck(distance_history: Collection[float], current_motion: str, con
     
     # Debug output
     print("\n" + "="*60)
-    print(f"[STUCK_CHECK] Motion: {current_motion}")
+    print(f"[STUCK_CHECK] Next motion: {next_motion}")
     print(f"Last {config.STUCK_STEPS} readings: {[f'{r:.1f}' for r in readings]}")
     print(f"Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
     print("="*60 + "\n")
