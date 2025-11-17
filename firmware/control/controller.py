@@ -306,8 +306,8 @@ class Controller:
                         print(f"- stuck_cooldown: {self.stuck_cooldown} (<= 0: {self.stuck_cooldown <= 0})")
                         print(f"- dist_hist length: {len(self.dist_hist)} (== {config.STUCK_STEPS}: {len(self.dist_hist) == config.STUCK_STEPS})")
                         
-                        if self.stuck_cooldown <= 0 and len(self.dist_hist) == config.STUCK_STEPS:
-                            # Calculate spread for debug output
+                        if self.stuck_cooldown <= 0 and len(self.dist_hist) >= config.STUCK_STEPS:
+                            # Get the most recent STUCK_STEPS readings
                             recent = list(self.dist_hist)[-config.STUCK_STEPS:]
                             spread = max(recent) - min(recent)
                             print(f"- Next motion from policy: {next_motion}")
@@ -319,11 +319,19 @@ class Controller:
                         print(f"- next_motion: {next_motion}")
                         print(f"- config.STUCK_STEPS: {config.STUCK_STEPS}")
                         
-                        is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
-                            self.dist_hist,
-                            next_motion,
-                            config
-                        )
+                        # Only check for stuck when we have enough history
+                        if len(self.dist_hist) >= config.STUCK_STEPS and self.stuck_cooldown <= 0:
+                            print("\n[CONTROLLER] Calling is_robot_stuck")
+                            print(f"- dist_hist: {list(self.dist_hist)}")
+                            print(f"- next_motion: {next_motion}")
+                            
+                            is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
+                                self.dist_hist,
+                                next_motion,
+                                config
+                            )
+                            
+                            print(f"[CONTROLLER] is_robot_stuck returned: is_stuck={is_stuck}, notes={stuck_notes}, cooldown={cooldown}")
                         
                         print(f"[CONTROLLER] is_robot_stuck returned: is_stuck={is_stuck}, notes={stuck_notes}, cooldown={cooldown}")
                         
