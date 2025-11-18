@@ -20,21 +20,10 @@ def is_robot_stuck(distance_history: Collection[float], next_motion: str, config
     Returns:
         Tuple of (is_stuck, notes, cooldown_steps)
     """
-    print("\n=== is_robot_stuck called ===")
-    print(f"next_motion: {next_motion}")
-    print(f"distance_history: {list(distance_history) if distance_history else 'None'}")
-    print(f"config.STUCK_STEPS: {config.STUCK_STEPS}")
-    # Debug: Print the conditions being checked
-    print(f"[DEBUG is_robot_stuck] Checking conditions:")
-    print(f"- distance_history exists: {bool(distance_history)}")
-    print(f"- len(distance_history) == config.STUCK_STEPS: {len(distance_history) if distance_history else 0} == {config.STUCK_STEPS}")
-    print(f"- next_motion in ['forward', 'backward']: {next_motion} in {['forward', 'backward']} = {next_motion in ['forward', 'backward']}")
-    
     # Only check when we have exactly STUCK_STEPS measurements and are about to move forward/backward
     if (not distance_history or 
         len(distance_history) != config.STUCK_STEPS or
         next_motion not in ["forward", "backward"]):
-        print("[DEBUG is_robot_stuck] Conditions not met, returning False")
         return False, "", 0
     
     # Get the readings (should be exactly STUCK_STEPS long)
@@ -43,12 +32,8 @@ def is_robot_stuck(distance_history: Collection[float], next_motion: str, config
     # Calculate the spread of the readings
     spread = max(readings) - min(readings)
     
-    # Debug output
-    print("\n" + "="*60)
-    print(f"[STUCK_CHECK] Next motion: {next_motion}")
-    print(f"Last {config.STUCK_STEPS} readings: {[f'{r:.1f}' for r in readings]}")
-    print(f"Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
-    print("="*60 + "\n")
+    # Log the stuck check details
+    print(f"[STUCK_CHECK] Motion: {next_motion}, Spread: {spread:.1f}cm (threshold: {config.STUCK_DELTA_CM}cm)")
     
     # If the spread is too small, we're not moving much
     if spread < config.STUCK_DELTA_CM:
@@ -62,13 +47,8 @@ def decide_next_motion(distance_cm: float, prev_motion: str) -> tuple[str, float
     """
     Autonomous policy: returns (next_motion, speed, notes)
     """
-    print("\n=== decide_next_motion called ===")
-    print(f"distance_cm: {distance_cm}, prev_motion: {prev_motion}")
-    
     if distance_cm == float('inf'):
-        result = ("stop", 0.0, "no-echo/open: waiting for valid reading")
-        print(f"Returning: {result}")
-        return result
+        return ("stop", 0.0, "no-echo: waiting for valid reading")
 
     if distance_cm <= config.STOP_CM:
         direction = random.choice(["left", "right"])

@@ -365,43 +365,19 @@ class Controller:
                     
                     # Check for stuck condition if we're not in cooldown and have enough history
                     if hasattr(self.policy, 'is_robot_stuck'):
-                        print(f"\n[DEBUG] Stuck check conditions:")
-                        print(f"- has is_robot_stuck: {hasattr(self.policy, 'is_robot_stuck')}")
-                        print(f"- stuck_cooldown: {self.stuck_cooldown} (<= 0: {self.stuck_cooldown <= 0})")
-                        print(f"- dist_hist length: {len(self.dist_hist)} (== {config.STUCK_STEPS}: {len(self.dist_hist) == config.STUCK_STEPS})")
-                        
-                        if self.stuck_cooldown <= 0 and len(self.dist_hist) >= config.STUCK_STEPS:
-                            # Get the most recent STUCK_STEPS readings
-                            recent = list(self.dist_hist)[-config.STUCK_STEPS:]
-                            spread = max(recent) - min(recent)
-                            print(f"- Next motion from policy: {next_motion}")
-                            print(f"- Recent distances: {recent}")
-                            print(f"- Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
-                        
-                        print("\n[CONTROLLER] About to call is_robot_stuck")
-                        print(f"- self.dist_hist: {list(self.dist_hist)}")
-                        print(f"- next_motion: {next_motion}")
-                        print(f"- config.STUCK_STEPS: {config.STUCK_STEPS}")
-                        
                         # Initialize variables with default values
                         is_stuck = False
                         stuck_notes = ""
                         cooldown = 0
                         spread = 0.0  # Initialize spread with a default value
                         
-                        # Only check for stuck when we have enough history
+                        # Only check for stuck when we have enough history and not in cooldown
                         if len(self.dist_hist) >= config.STUCK_STEPS and self.stuck_cooldown <= 0:
-                            print("\n[CONTROLLER] Calling is_robot_stuck")
-                            print(f"- dist_hist: {list(self.dist_hist)}")
-                            print(f"- next_motion: {next_motion}")
-                            
                             is_stuck, stuck_notes, cooldown = self.policy.is_robot_stuck(
                                 self.dist_hist,
                                 next_motion,
                                 config
                             )
-                            
-                            print(f"[CONTROLLER] is_robot_stuck returned: is_stuck={is_stuck}, notes={stuck_notes}, cooldown={cooldown}")
                         
                         if is_stuck:
                             turn_dir = random.choice(["left", "right"])
@@ -413,12 +389,10 @@ class Controller:
                             stuck_triggered = 1
                             self.stuck_cooldown = cooldown
                             next_motion, next_speed = ("forward", self._cfg("FORWARD_SPD", config.FORWARD_SPD))
-                            # Keep some history to prevent rapid re-triggering
+# Keep some history to prevent rapid re-triggering
                             if len(self.dist_hist) > config.STUCK_STEPS:
                                 self.dist_hist = deque(list(self.dist_hist)[-config.STUCK_STEPS:])
-                            # Add debug info to notes
-                            stuck_debug = f" [STUCK_DETECTED]"
-                            print(f"\n{'*'*60}\nSTUCK DETECTED! Executing recovery maneuver.\n{'*'*60}\n")
+                            print("\n[RECOVERY] Executing recovery maneuver")
                         else:
                             stuck_debug = f" [STUCK_CHECK: spread={spread:.1f}cm >= {config.STUCK_DELTA_CM}cm]"
                     elif hasattr(self.policy, 'is_robot_stuck'):
@@ -442,12 +416,12 @@ class Controller:
                     if len(self.dist_hist) > config.STUCK_STEPS:
                         self.dist_hist.popleft()
                     
-                    # Print debug info when we have a full history
+                    # Log distance history when we have a full set of readings
                     if len(self.dist_hist) == config.STUCK_STEPS:
                         recent = list(self.dist_hist)
                         spread = max(recent) - min(recent)
-                        print(f"[DIST_HIST] Last {config.STUCK_STEPS} readings: {[f'{x:.1f}' for x in recent]}")
-                        print(f"[STUCK_CHECK] Spread: {spread:.1f}cm, Threshold: {config.STUCK_DELTA_CM}cm")
+                        if spread < config.STUCK_DELTA_CM * 1.5:  # Only log if we're getting close to the threshold
+                            print(f"[DISTANCE] Spread: {spread:.1f}cm (threshold: {config.STUCK_DELTA_CM}cm)")
                 
                 # Decrement stuck cooldown if needed
                 if self.stuck_cooldown > 0:
