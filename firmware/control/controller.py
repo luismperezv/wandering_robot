@@ -110,6 +110,21 @@ class Controller:
     def run(self):
         try:
             while True:
+                # Process queued moves first
+                if self.queued_moves:
+                    # Execute the next queued move
+                    next_motion, next_speed, ticks = self.queued_moves[0]
+                    # Decrement the tick counter
+                    self.queued_moves[0] = (next_motion, next_speed, ticks - 1)
+                    
+                    # If this move is complete, remove it from the queue
+                    if ticks <= 1:
+                        self.queued_moves.pop(0)
+                    
+                    # Skip normal motion decision for this iteration
+                    time.sleep(self._cfg("TICK_S", config.TICK_S))
+                    continue  # Go to next iteration to process the next queued move or command
+
                 # Drain web commands
                 if self.commands_q is not None:
                     while True:
