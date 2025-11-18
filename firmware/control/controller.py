@@ -112,17 +112,65 @@ class Controller:
             while True:
                 # Process queued moves first
                 if self.queued_moves:
-                    # Execute the next queued move
-                    next_motion, next_speed, ticks = self.queued_moves[0]
-                    # Decrement the tick counter
-                    self.queued_moves[0] = (next_motion, next_speed, ticks - 1)
+                    # Get the current move
+                    next_motion, next_speed, ticks_remaining = self.queued_moves[0]
                     
-                    # If this move is complete, remove it from the queue
-                    if ticks <= 1:
+                    # Execute the move for this tick
+                    execute_motion(self.robot, next_motion, next_speed, self._duration_for_motion(next_motion))
+                    
+                    # Decrement the tick counter
+                    ticks_remaining -= 1
+                    
+                    # Update the queue with the remaining ticks
+                    if ticks_remaining > 0:
+                        self.queued_moves[0] = (next_motion, next_speed, ticks_remaining)
+                    else:
+                        # Move is complete, remove it from the queue
                         self.queued_moves.pop(0)
                     
                     # Skip normal motion decision for this iteration
-                    time.sleep(self._cfg("TICK_S", config.TICK_S))
+                    time.sleep(0.05)  # Small delay to prevent busy-waiting
+                    
+                    # Update current motion for logging
+                    self.current_motion, self.current_speed = next_motion, next_speed
+                    
+                    # Log the action
+                    distances = self.sensor.get_distances()
+                    front_d = distances.get('front', float('inf'))
+                    left_d = distances.get('left', float('inf'))
+                    right_d = distances.get('right', float('inf'))
+                    
+                    self.writer([
+                        "RECOVERY",
+                        front_d,
+                        left_d,
+                        right_d,
+                        self.current_motion,
+                        self.current_speed,
+                        self.queued_moves[0][0] if self.queued_moves else "idle",
+                        self.queued_moves[0][1] if self.queued_moves else 0.0,
+                        f"recovery_{next_motion}_{ticks_remaining}",
+                        0,
+                        len(self.queued_moves)
+                    ])
+                    
+                    # Broadcast the state
+                    state = {
+                        "mode": "RECOVERY",
+                        "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                        "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                        "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
+                        "executed_motion": self.current_motion,
+                        "executed_speed": round(self.current_speed, 2),
+                        "next_motion": (self.queued_moves[0][0] if self.queued_moves else "idle"),
+                        "next_speed": (self.queued_moves[0][1] if self.queued_moves else 0.0),
+                        "notes": f"recovery_{next_motion}_{ticks_remaining}",
+                        "stuck": 1,
+                        "queue_len": len(self.queued_moves),
+                        "log_file": self.log_file,
+                    }
+                    self._broadcast(state)
+                    
                     continue  # Go to next iteration to process the next queued move or command
 
                 # Drain web commands
