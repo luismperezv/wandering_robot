@@ -123,7 +123,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/openapi.yaml":
-            root = self.directory  # type: ignore[attr-defined]
+            # Look for openapi.yaml in the project root (one level up from the web directory)
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             path = os.path.join(root, "openapi.yaml")
             if os.path.exists(path):
                 with open(path, "rb") as f:
