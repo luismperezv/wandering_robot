@@ -58,11 +58,7 @@ def main():
     print(f"BACK_SPD = {cfg_mgr.get('BACK_SPD')} (from ConfigManager)")
     print("=" * 40 + "\n")
 
-    try:
-        server, _, hub, commands_q = start_dashboard_server(project_root, port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))), config_manager=cfg_mgr, policy_manager=policy_mgr)
-    except Exception as e:
-        print(f"[dashboard] failed to start HTTP server: {e}")
-
+    # Initialize robot and sensors
     robot = CamJamKitRobot()
     
     # Configure all three ultrasonic sensors
@@ -79,9 +75,6 @@ def main():
         samples=config.SAMPLES_PER_READ
     )
     
-    # Register cleanup for proper shutdown
-    atexit.register(sensors.cleanup)
-
     # Create logs directory if it doesn't exist
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
@@ -119,7 +112,7 @@ def main():
             row[6],  # next_motion
             format_value(row[7], is_numeric=True),  # next_speed
             row[8],  # notes
-            row[9],  # stuck_triggered
+            1 if row[9] else 0,  # stuck_triggered (convert boolean to 0/1)
             row[10]  # queue_len
         ])
         f.flush()
@@ -130,12 +123,31 @@ def main():
     print("Controls: Enter=toggle MANUAL, WASD=drive. Ctrl+C to quit.")
     print(f"Logging to {log_file}.")
 
-    controller = Controller(robot, sensors, write_row, hub, commands_q, keyboard=kb, log_file=log_file, config_manager=cfg_mgr, policy_manager=policy_mgr)
+    # Create a queue for commands
+    commands_q = queue.Queue()
+    
+    # Create controller first
+    controller = Controller(robot, sensors, write_row, None, commands_q, keyboard=kb, 
+                          log_file=log_file, config_manager=cfg_mgr, policy_manager=policy_mgr)
+    
+    # Now start the server with the controller
     try:
-        controller.run()
-    except KeyboardInterrupt:
-        print("\nStopping...")
-    finally:
+        server, _, hub, _ = start_dashboard_server(
+            project_root, 
+            port=int(os.environ.get("DASHBOARD_PORT", str(config.DASHBOARD_PORT))), 
+            config_manager=cfg_mgr, 
+            policy_manager=policy_mgr,
+            controller=controller  # Pass the controller here
+        )
+        # Update the controller's hub reference
+        controller.hub = hub
+    except Exception as e:
+        print(f"[dashboard] failed to start HTTP server: {e}")
+        server = None
+        hub = None
+    
+    # Register cleanup for proper shutdown
+    def cleanup():
         try:
             kb.stop()
         except Exception:
@@ -146,9 +158,16 @@ def main():
         except Exception:
             pass
         f.close()
+        sensors.cleanup()
+    
+    atexit.register(cleanup)
+    
+    # Start the controller
+    try:
+        controller.run()
+    except KeyboardInterrupt:
+        print("\nStopping...")
 
 
 if __name__ == "__main__":
     main()
-
-
