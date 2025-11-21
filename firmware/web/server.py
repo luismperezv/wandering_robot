@@ -120,7 +120,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 time.sleep(0.1)
                 
             except Exception as e:
-                return {"success": False, "error": f"Error executing command {cmd}: {str(e)}"}
+                import sys, traceback
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                error_details = {
+                    "type": str(exc_type),
+                    "message": str(exc_value),
+                    "traceback": traceback.format_exc()
+                }
+                print(f"DEBUG - Error details: {error_details}")
+                return {
+                    "success": False, 
+                    "error": f"Error executing command {cmd}: {str(e)}",
+                    "debug": {
+                        "error_type": str(type(e).__name__),
+                        "error_message": str(e),
+                        "available_modules": list(sys.modules.keys())
+                    },
+                    "log": log
+                }
         
         return {"success": True, "log": log}
 
