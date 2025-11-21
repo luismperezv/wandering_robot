@@ -5,6 +5,7 @@ import json
 import threading
 import queue
 import os
+import datetime
 from functools import partial
 
 try:
@@ -61,6 +62,65 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return json.loads(body.decode("utf-8"))
         except Exception:
             return None
+            
+    def _handle_command_sequence(self, commands):
+        """Process a sequence of movement commands and return the execution log.
+        
+        Args:
+            commands: List of command objects with 'name', 'speed', and 'duration_s' or 'duration_ms'
+            
+        Returns:
+            dict: Response with success status and execution log
+        """
+        if not commands or not isinstance(commands, list):
+            return {"success": False, "error": "No commands provided"}
+            
+        log = []
+        
+        for cmd in commands:
+            if not isinstance(cmd, dict) or 'name' not in cmd:
+                return {"success": False, "error": f"Invalid command: {cmd}"}
+                
+            # Prepare the command for the queue
+            cmd_data = {
+                "type": "cmd",
+                "name": cmd["name"],
+                "speed": cmd.get("speed"),
+                "duration_ms": cmd.get("duration_ms"),
+                "duration_s": cmd.get("duration_s")
+            }
+            
+            try:
+                # Put the command in the queue
+                self.commands.put_nowait(cmd_data)
+                
+                # Get the current state for logging (this is a simplified version)
+                state = self.hub.get_state() if hasattr(self.hub, "get_state") else {}
+                
+                # Add to log
+                log_entry = {
+                    "timestamp": state.get("timestamp", datetime.datetime.utcnow().isoformat()),
+                    "mode": state.get("mode", "REMOTE"),
+                    "front_distance_cm": state.get("front_distance_cm"),
+                    "left_distance_cm": state.get("left_distance_cm"),
+                    "right_distance_cm": state.get("right_distance_cm"),
+                    "executed_motion": cmd["name"],
+                    "executed_speed": cmd.get("speed", 0.0),
+                    "next_motion": "",  # Not available in this simple implementation
+                    "next_speed": 0.0,  # Not available in this simple implementation
+                    "notes": f"Executed {cmd['name']}",
+                    "stuck_triggered": 0,
+                    "queue_len": self.commands.qsize()
+                }
+                log.append(log_entry)
+                
+                # Small delay to allow the command to be processed
+                time.sleep(0.1)
+                
+            except Exception as e:
+                return {"success": False, "error": f"Error executing command {cmd}: {str(e)}"}
+        
+        return {"success": True, "log": log}
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -170,6 +230,35 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/command_seq":
+            obj = self._read_json() or {}
+            commands = obj.get("commands", [])
+            if not isinstance(commands, list):
+                self.send_response(400)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Commands must be a list"}).encode("utf-8"))
+                return
+            
+            try:
+                # Process the command sequence
+                result = self._handle_command_sequence(commands)
+                
+                # Send the response
+                self.send_response(200 if result.get("success", False) else 400)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+            
         if parsed.path == "/api/cmd":
             obj = self._read_json() or {}
             name = obj.get("name")
