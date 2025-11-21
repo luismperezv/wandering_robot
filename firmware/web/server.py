@@ -7,9 +7,9 @@ import threading
 import time
 import urllib.parse
 from datetime import datetime
-from http import server as http
 from pathlib import Path
 from functools import partial
+from typing import Optional, Dict, Any, List, Union
 
 try:
     from firmware.web.sse import DashboardHub, _SSEClient
