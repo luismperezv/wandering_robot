@@ -227,24 +227,6 @@ paths:
       summary: Clear overrides
       responses:
         '204': { description: OK }
-  /api/events:
-    get:
-      tags: [status]
-      summary: Server Sent Events stream
-      description: |
-        Text/event-stream of JSON lines suitable for EventSource clients. Includes state snapshots and log lines.
-        Content type is `text/event-stream`.
-      responses:
-        '200':
-          description: SSE stream
-          content:
-            text/event-stream:
-              schema:
-                type: string
-              examples:
-                stateLine:
-                  summary: Example event payload (data field only)
-                  value: '{"mode":"AUTO","distance_cm":42.1,...}'
   /api/policy:
     get:
       tags: [control]
