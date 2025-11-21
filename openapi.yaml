@@ -312,6 +312,8 @@ paths:
       summary: Revert to default policy
       responses:
         '204': { description: OK }
+
+  /api/events:
     get:
       tags: [status]
       summary: Server Sent Events stream
