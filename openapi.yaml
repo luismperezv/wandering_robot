@@ -295,6 +295,84 @@ paths:
       responses:
         '204': { description: OK }
 
+  /api/command_seq:
+    post:
+      tags: [control]
+      summary: Execute a sequence of movement commands
+      description: |
+        Execute a series of movement commands in sequence and return the execution log.
+        The robot will execute each command in order, one after another completes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commands]
+              properties:
+                commands:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                        enum: [forward, backward, left, right, stop]
+                      speed:
+                        type: number
+                        minimum: 0
+                        maximum: 1
+                      duration_ms:
+                        type: integer
+                        minimum: 1
+                      duration_s:
+                        type: number
+                        minimum: 0.001
+            examples:
+              squarePattern:
+                summary: Drive in a square pattern
+                value: {
+                  "commands": [
+                    {"name": "forward", "speed": 0.5, "duration_s": 1.0},
+                    {"name": "right", "duration_s": 0.5},
+                    {"name": "forward", "speed": 0.5, "duration_s": 1.0},
+                    {"name": "right", "duration_s": 0.5},
+                    {"name": "forward", "speed": 0.5, "duration_s": 1.0},
+                    {"name": "right", "duration_s": 0.5},
+                    {"name": "forward", "speed": 0.5, "duration_s": 1.0}
+                  ]
+                }
+      responses:
+        '200':
+          description: Sequence executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  log: 
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        timestamp: { type: string, format: date-time }
+                        mode: { type: string }
+                        front_distance_cm: { type: [number, "null"] }
+                        left_distance_cm: { type: [number, "null"] }
+                        right_distance_cm: { type: [number, "null"] }
+                        executed_motion: { type: string }
+                        executed_speed: { type: number }
+                        next_motion: { type: string }
+                        next_speed: { type: number }
+                        notes: { type: string }
+                        stuck_triggered: { type: integer }
+                        queue_len: { type: integer }
+        '400':
+          description: Invalid request (e.g., empty command list or invalid command)
+
   /api/events:
     get:
       tags: [status]
