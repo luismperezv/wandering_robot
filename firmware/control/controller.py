@@ -106,6 +106,103 @@ class Controller:
             self.hub.broadcast(json.dumps(msg))
         except Exception:
             pass
+            
+    def execute_command_sequence(self, commands):
+        """Execute a sequence of commands and return the execution log.
+        
+        Args:
+            commands: List of command dictionaries with 'name', 'speed', 'duration_s' or 'duration_ms'
+            
+        Returns:
+            dict: {
+                'success': bool,
+                'log': list of command execution logs,
+                'error': str (if success is False)
+            }
+        """
+        if not commands or not isinstance(commands, list):
+            return {"success": False, "error": "No commands provided"}
+            
+        log = []
+        
+        for cmd in commands:
+            if not isinstance(cmd, dict) or 'name' not in cmd:
+                return {
+                    "success": False, 
+                    "error": f"Invalid command: {cmd}",
+                    "log": log
+                }
+                
+            # Get duration in seconds (convert from ms if needed)
+            duration_s = cmd.get('duration_s')
+            if duration_s is None and 'duration_ms' in cmd:
+                duration_s = cmd['duration_ms'] / 1000.0
+            if duration_s is None:
+                duration_s = 0.5  # Default duration if not specified
+                
+            # Prepare the command for the queue
+            cmd_data = {
+                "type": "cmd",
+                "name": cmd["name"],
+                "speed": cmd.get("speed", config.FORWARD_SPD),  # Default speed from config if not specified
+                "duration_s": duration_s
+            }
+            
+            try:
+                # Get state before command execution
+                state = self._get_current_state()
+                
+                # Execute the command
+                self.commands_q.put_nowait(cmd_data)
+                
+                # Wait for the command to complete (duration + small buffer)
+                time.sleep(duration_s + 0.1)
+                
+                # Get state after command execution
+                state = self._get_current_state()
+                
+                # Create log entry
+                log_entry = {
+                    "timestamp": state.get("timestamp", datetime.datetime.utcnow().isoformat()),
+                    "mode": state.get("mode", "REMOTE"),
+                    "front_distance_cm": state.get("front_distance_cm"),
+                    "left_distance_cm": state.get("left_distance_cm"),
+                    "right_distance_cm": state.get("right_distance_cm"),
+                    "executed_motion": cmd["name"],
+                    "executed_speed": cmd.get("speed", 0.5),
+                    "next_motion": "",
+                    "next_speed": 0.0,
+                    "notes": f"Executed {cmd['name']} for {duration_s:.2f}s",
+                    "stuck_triggered": 0,
+                    "queue_len": self.commands_q.qsize()
+                }
+                log.append(log_entry)
+                
+                # Broadcast the updated state
+                self._broadcast({
+                    **state,
+                    "executed_motion": cmd["name"],
+                    "executed_speed": cmd.get("speed", 0.5),
+                    "log_file": self.log_file
+                })
+                
+            except Exception as e:
+                return {
+                    "success": False, 
+                    "error": f"Error executing command {cmd}: {str(e)}",
+                    "log": log
+                }
+        
+        return {"success": True, "log": log}
+        
+    def _get_current_state(self):
+        """Helper method to get the current robot state from the hub."""
+        if hasattr(self.hub, 'get_state'):
+            state = self.hub.get_state()
+            if not isinstance(state, dict):
+                state = {}
+            return state
+        return {}
 
     def run(self):
         try:

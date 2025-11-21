@@ -234,6 +234,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if parsed.path == "/api/command_seq":
             obj = self._read_json() or {}
             commands = obj.get("commands", [])
+            
+            # Get the controller instance from the server
+            controller = getattr(self, 'controller', None)
+            if not controller:
+                self.send_response(500)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Controller not available"}).encode("utf-8"))
+                return
+                
             if not isinstance(commands, list):
                 self.send_response(400)
                 self._set_cors()
@@ -243,8 +254,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 return
             
             try:
-                # Process the command sequence
-                result = self._handle_command_sequence(commands)
+                # Delegate command sequence execution to the controller
+                result = controller.execute_command_sequence(commands)
                 
                 # Send the response
                 self.send_response(200 if result.get("success", False) else 400)
