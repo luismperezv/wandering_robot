@@ -34,8 +34,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     hub: DashboardHub = None
     commands: "queue.Queue[object]" = None
     config_manager = None
-    allow_cors_all: bool = True
     policy_manager = None
+    controller = None  # Add controller class variable
+    allow_cors_all: bool = True
 
     def log_message(self, format, *args):
         return
@@ -359,7 +360,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(404); self._set_cors(); self.end_headers()
 
 
-def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None):
+def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None, controller=None):
     hub = DashboardHub()
     commands_q: "queue.Queue[object]" = queue.Queue()
     handler_cls = partial(DashboardHandler, directory=root_dir)
@@ -373,6 +374,7 @@ def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None,
     DashboardHandler.commands = commands_q
     DashboardHandler.config_manager = config_manager
     DashboardHandler.policy_manager = policy_manager
+    DashboardHandler.controller = controller  # Set the controller
 
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
