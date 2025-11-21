@@ -61,11 +61,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if not body:
             return None
         try:
-            return json.loads(body.decode("utf-8"))
-        except Exception:
+            print(f"Raw request body: {body}")
+            data = json.loads(body.decode("utf-8"))
+            print(f"Parsed JSON data: {data}")
+            return data
+        except Exception as e:
+            print(f"ERROR in _read_json: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
             
-    def _handle_command_sequence(self, commands):
+    def _handle_command_sequence(self, controller, commands):
         """Process a sequence of movement commands and return the execution log.
         
         Args:
@@ -74,6 +80,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         Returns:
             dict: Response with success status and execution log
         """
+        print("\n--- Executing Command Sequence ---")
+        print(f"Controller type: {type(controller).__name__}")
+        print(f"Commands: {commands}")
+        try:
+            result = self._handle_command_sequence_impl(commands)
+            print(f"Command execution result: {result}")
+            return result
+        except Exception as e:
+            print(f"ERROR in _handle_command_sequence: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def _handle_command_sequence_impl(self, commands):
         if not commands or not isinstance(commands, list):
             return {"success": False, "error": "No commands provided"}
             
@@ -120,14 +140,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 time.sleep(0.1)
                 
             except Exception as e:
-                import sys, traceback
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                error_details = {
-                    "type": str(exc_type),
-                    "message": str(exc_value),
-                    "traceback": traceback.format_exc()
-                }
-                print(f"DEBUG - Error details: {error_details}")
+                print(f"ERROR in command execution: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 return {
                     "success": False, 
                     "error": f"Error executing command {cmd}: {str(e)}",
@@ -248,13 +263,23 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        print("\n=== New POST Request ===")
+        print(f"Path: {self.path}")
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/command_seq":
+            print("Handling /api/command_seq request")
             obj = self._read_json() or {}
             commands = obj.get("commands", [])
             
             # Get the controller instance from the server
+            print("\n--- Controller Check ---")
             controller = getattr(self, 'controller', None)
+            print(f"Controller from self: {controller}")
+            if not controller:
+                print("Controller not found in self, checking class variables...")
+                controller = getattr(DashboardHandler, 'controller', None)
+                print(f"Controller from class: {controller}")
+            
             if not controller:
                 self.send_response(500)
                 self._set_cors()
