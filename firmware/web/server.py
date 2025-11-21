@@ -6,7 +6,7 @@ import threading
 import queue
 import os
 import time
-import datetime
+from datetime import datetime
 from functools import partial
 
 try:
@@ -101,7 +101,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Add to log
                 log_entry = {
-                    "timestamp": state.get("timestamp", datetime.utcnow().isoformat()),
+                    "timestamp": state.get("timestamp", datetime.utcnow().isoformat()) if 'datetime' in globals() else state.get("timestamp", datetime.now().isoformat()),
                     "mode": state.get("mode", "REMOTE"),
                     "front_distance_cm": state.get("front_distance_cm"),
                     "left_distance_cm": state.get("left_distance_cm"),
