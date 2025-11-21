@@ -227,7 +227,6 @@ paths:
       summary: Clear overrides
       responses:
         '204': { description: OK }
-  /events:
   /api/policy:
     get:
       tags: [control]
@@ -250,8 +249,6 @@ paths:
                   value: { name: custom, has_custom: true, error: null }
                 custom_error:
                   value: { name: default, has_custom: true, error: "load_error: ..." }
-
-  /api/policy/code:
     put:
       tags: [control]
       summary: Upload custom movement policy code
@@ -297,6 +294,8 @@ paths:
       summary: Revert to default policy
       responses:
         '204': { description: OK }
+
+  /api/events:
     get:
       tags: [status]
       summary: Server Sent Events stream

@@ -123,9 +123,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/openapi.yaml":
-            root = self.directory  # type: ignore[attr-defined]
+            # First try the project root (where the server is started from)
+            root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             path = os.path.join(root, "openapi.yaml")
+            
+            # If not found, try one more level up (in case we're in firmware/web/)
+            if not os.path.exists(path):
+                root = os.path.dirname(root)
+                path = os.path.join(root, "openapi.yaml")
+                
             if os.path.exists(path):
+                print(f"[server] Serving OpenAPI spec from: {path}")
                 with open(path, "rb") as f:
                     data = f.read()
                 self.send_response(200)
