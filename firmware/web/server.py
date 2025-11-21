@@ -6,7 +6,8 @@ import queue
 import threading
 import time
 import urllib.parse
-from datetime import datetime
+import datetime
+print(f"DEBUG - datetime module available: {hasattr(datetime, 'datetime')}")
 from pathlib import Path
 from functools import partial
 from typing import Optional, Dict, Any, List, Union
@@ -123,7 +124,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Add to log
                 log_entry = {
-                    "timestamp_iso": datetime.now().isoformat(),
+                    "timestamp_iso": datetime.datetime.now().isoformat(),  # Using the datetime module
                     "mode": state.get("mode", "REMOTE"),
                     "front_distance_cm": state.get("front_distance_cm"),
                     "left_distance_cm": state.get("left_distance_cm"),
