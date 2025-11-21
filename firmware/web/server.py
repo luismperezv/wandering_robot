@@ -1,12 +1,14 @@
 import http.server
 import socket
-import urllib.parse
 import json
-import threading
-import queue
 import os
+import queue
+import threading
 import time
+import urllib.parse
 from datetime import datetime
+from http import server as http
+from pathlib import Path
 from functools import partial
 
 try:
@@ -121,7 +123,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Add to log
                 log_entry = {
-                    "timestamp": state.get("timestamp", datetime.now().isoformat()),
+                    "timestamp_iso": datetime.now().isoformat(),
                     "mode": state.get("mode", "REMOTE"),
                     "front_distance_cm": state.get("front_distance_cm"),
                     "left_distance_cm": state.get("left_distance_cm"),
