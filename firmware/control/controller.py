@@ -293,6 +293,7 @@ class Controller:
                                 # Toggle between AUTO and REMOTE modes
                                 if name == 'toggle':
                                     self.auto_mode = not self.auto_mode
+                                    print(f"[TOGGLE] Mode toggled to: {'AUTO' if self.auto_mode else 'REMOTE'}")
                                     self.robot.stop()
                                     self.queued_moves.clear()
                                     continue
@@ -352,6 +353,7 @@ class Controller:
                     
                 # If in REMOTE mode and no immediate command is running, idle (no motion)
                 if not self.auto_mode and not self.queued_moves:
+                    print(f"[REMOTE] In REMOTE idle mode")  # Debug
                     # Only update state if it's changed from the last broadcast
                     if not hasattr(self, '_last_idle_state') or time.time() - getattr(self, '_last_idle_time', 0) > 5.0:
                         # Get readings from all sensors
@@ -591,9 +593,9 @@ class Controller:
                     except Exception:
                         pass
                 else:
-                    # Not in AUTO mode - this shouldn't happen given the earlier checks
-                    # but log it for debugging
-                    print(f"[DEBUG] Reached AUTO branch but auto_mode={self.auto_mode}")
+                    # Not in AUTO mode - reached the bottom of the loop without handling
+                    print(f"[DEBUG] End of loop: auto_mode={self.auto_mode}, queued_moves={len(self.queued_moves)}")
+                    time.sleep(0.1)  # Prevent busy looping
         finally:
             try:
                 self.robot.stop()
