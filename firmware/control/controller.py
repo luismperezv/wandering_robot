@@ -280,6 +280,7 @@ class Controller:
                             break
                         # New dict-based commands
                         if isinstance(c, dict):
+                            print(f"[CMD] Received command: {c}")  # Debug
                             if c.get("type") == "mode":
                                 mode = c.get("mode")
                                 self.robot.stop()
