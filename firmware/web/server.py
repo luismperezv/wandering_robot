@@ -407,7 +407,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
 def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None, controller=None):
     hub = DashboardHub()
-    commands_q: "queue.Queue[object]" = queue.Queue()
+    # Use the controller's existing command queue instead of creating a new one
+    commands_q = controller.commands_q if controller and hasattr(controller, 'commands_q') else queue.Queue()
     handler_cls = partial(DashboardHandler, directory=root_dir)
     try:
         httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
