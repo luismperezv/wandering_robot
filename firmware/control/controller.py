@@ -354,7 +354,6 @@ class Controller:
                     
                 # If in REMOTE mode and no immediate command is running, idle (no motion)
                 if not self.auto_mode and not self.queued_moves:
-                    print(f"[REMOTE] In REMOTE idle mode")  # Debug
                     # Only update state if it's changed from the last broadcast
                     if not hasattr(self, '_last_idle_state') or time.time() - getattr(self, '_last_idle_time', 0) > 5.0:
                         # Get readings from all sensors
