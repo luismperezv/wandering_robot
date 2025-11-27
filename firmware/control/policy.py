@@ -175,10 +175,8 @@ class Policy:
         Returns:
             Tuple of (is_stuck, notes, cooldown_steps)
         """
-        # Only check when we have exactly STUCK_STEPS measurements and are about to move forward/backward
-        if (not distance_history or 
-            len(distance_history) != config.STUCK_STEPS or
-            next_motion not in ["forward", "backward"]):
+        # Only check when we have exactly STUCK_STEPS measurements
+        if not distance_history or len(distance_history) != config.STUCK_STEPS:
             return False, "", 0
         
         # Get the readings (should be exactly STUCK_STEPS long)
