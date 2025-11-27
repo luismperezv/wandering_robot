@@ -648,7 +648,7 @@
       if (!state.enableSSE) return;
       let es;
       try {
-        es = new EventSource('/events');
+        es = new EventSource('/api/events');
       } catch {
         return;
       }

@@ -161,7 +161,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/events":
+        if parsed.path == "/api/events":
             self.send_response(200)
             self._set_cors()
             self.send_header("Content-Type", "text/event-stream")
