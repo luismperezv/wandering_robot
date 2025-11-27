@@ -33,6 +33,7 @@ class Policy:
         self.dist_hist = deque(maxlen=self.config.STUCK_STEPS)
         self.stuck_cooldown = 0
         self.queued_moves = []  # List of (motion, speed, ticks_remaining) tuples
+        self.consecutive_no_echo = 0  # Track consecutive invalid readings
         
     def update_distance(self, front_distance_cm: float):
         """
@@ -43,6 +44,7 @@ class Policy:
         """
         if front_distance_cm != float('inf'):
             self.dist_hist.append(front_distance_cm)
+            self.consecutive_no_echo = 0  # Reset no-echo counter on valid reading
             
             # Log distance history when we have a full set of readings
             if len(self.dist_hist) == self.config.STUCK_STEPS:
@@ -50,6 +52,11 @@ class Policy:
                 spread = max(recent) - min(recent)
                 if spread < self.config.STUCK_DELTA_CM * 1.5:
                     print(f"[DISTANCE] Spread: {spread:.1f}cm (threshold: {self.config.STUCK_DELTA_CM}cm)")
+        else:
+            # Track consecutive invalid readings
+            self.consecutive_no_echo += 1
+            if self.consecutive_no_echo >= self.config.STUCK_STEPS:
+                print(f"[NO_ECHO] {self.consecutive_no_echo} consecutive invalid readings (threshold: {self.config.STUCK_STEPS})")
     
     def get_next_action(self, prev_motion: str, front_distance_cm: float) -> Tuple[str, float, str, bool]:
         """
@@ -90,34 +97,46 @@ class Policy:
         # Get normal navigation decision
         next_motion, next_speed, notes = self.decide_next_motion(front_distance_cm, prev_motion)
         
-        # Check for stuck condition if we're not in cooldown and have enough history
-        if len(self.dist_hist) >= self.config.STUCK_STEPS and self.stuck_cooldown <= 0:
+        # Check for stuck condition if we're not in cooldown
+        is_stuck = False
+        stuck_notes = ""
+        cooldown = 0
+        
+        # Check for no-echo stuck (consecutive invalid readings)
+        if self.consecutive_no_echo >= self.config.STUCK_STEPS and self.stuck_cooldown <= 0:
+            is_stuck = True
+            stuck_notes = f"NO_ECHO_STUCK: {self.consecutive_no_echo} invalid readings -> back {self.config.BACK_TICKS} + turn {self.config.NUDGE_TICKS}"
+            cooldown = self.config.STUCK_COOLDOWN_STEPS
+        # Check for normal stuck (distance not changing)
+        elif len(self.dist_hist) >= self.config.STUCK_STEPS and self.stuck_cooldown <= 0:
             is_stuck, stuck_notes, cooldown = self.is_robot_stuck(
                 self.dist_hist,
                 next_motion,
                 self.config
             )
+        
+        # Trigger recovery if stuck
+        if is_stuck:
+            # Queue recovery moves
+            turn_dir = random.choice(["left", "right"])
+            self.queued_moves = [
+                ("backward", self.config.BACK_SPD, self.config.BACK_TICKS),
+                (turn_dir, self.config.TURN_SPD, self.config.NUDGE_TICKS),
+            ]
             
-            if is_stuck:
-                # Queue recovery moves
-                turn_dir = random.choice(["left", "right"])
-                self.queued_moves = [
-                    ("backward", self.config.BACK_SPD, self.config.BACK_TICKS),
-                    (turn_dir, self.config.TURN_SPD, self.config.NUDGE_TICKS),
-                ]
-                
-                # Set cooldown and update notes
-                self.stuck_cooldown = cooldown
-                notes = stuck_notes
-                
-                # Keep some history to prevent rapid re-triggering
-                if len(self.dist_hist) > self.config.STUCK_STEPS:
-                    self.dist_hist = deque(list(self.dist_hist)[-self.config.STUCK_STEPS:])
-                
-                print("\n[RECOVERY] Executing recovery maneuver")
-                
-                # Return the first recovery move
-                return self.get_next_action(prev_motion, front_distance_cm)
+            # Set cooldown and update notes
+            self.stuck_cooldown = cooldown
+            notes = stuck_notes
+            
+            # Reset no-echo counter and clear history
+            self.consecutive_no_echo = 0
+            if len(self.dist_hist) > self.config.STUCK_STEPS:
+                self.dist_hist = deque(list(self.dist_hist)[-self.config.STUCK_STEPS:])
+            
+            print(f"\n[RECOVERY] Executing recovery maneuver: {stuck_notes}")
+            
+            # Return the first recovery move
+            return self.get_next_action(prev_motion, front_distance_cm)
         
         # Decrement cooldown if needed
         if self.stuck_cooldown > 0:
