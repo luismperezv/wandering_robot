@@ -5,12 +5,10 @@ import datetime
 
 try:
     from firmware import config
-    from firmware.control.policy import decide_next_motion
     from firmware.config_manager import ConfigManager
     from firmware.policy_manager import PolicyManager
 except Exception:
     import config  # type: ignore
-    from control.policy import decide_next_motion  # type: ignore
     from config_manager import ConfigManager  # type: ignore
     from policy_manager import PolicyManager  # type: ignore
 
