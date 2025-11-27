@@ -1,11 +1,16 @@
 import http.server
 import socket
-import urllib.parse
 import json
-import threading
-import queue
 import os
+import queue
+import threading
+import time
+import urllib.parse
+import datetime
+print(f"DEBUG - datetime module available: {hasattr(datetime, 'datetime')}")
+from pathlib import Path
 from functools import partial
+from typing import Optional, Dict, Any, List, Union
 
 try:
     from firmware.web.sse import DashboardHub, _SSEClient
@@ -32,8 +37,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     hub: DashboardHub = None
     commands: "queue.Queue[object]" = None
     config_manager = None
-    allow_cors_all: bool = True
     policy_manager = None
+    controller = None  # Add controller class variable
+    allow_cors_all: bool = True
 
     def log_message(self, format, *args):
         return
@@ -58,9 +64,100 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if not body:
             return None
         try:
-            return json.loads(body.decode("utf-8"))
-        except Exception:
+            print(f"Raw request body: {body}")
+            data = json.loads(body.decode("utf-8"))
+            print(f"Parsed JSON data: {data}")
+            return data
+        except Exception as e:
+            print(f"ERROR in _read_json: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
+            
+    def _handle_command_sequence(self, controller, commands):
+        """Process a sequence of movement commands and return the execution log.
+        
+        Args:
+            commands: List of command objects with 'name', 'speed', and 'duration_s' or 'duration_ms'
+            
+        Returns:
+            dict: Response with success status and execution log
+        """
+        print("\n--- Executing Command Sequence ---")
+        print(f"Controller type: {type(controller).__name__}")
+        print(f"Commands: {commands}")
+        try:
+            result = self._handle_command_sequence_impl(commands)
+            print(f"Command execution result: {result}")
+            return result
+        except Exception as e:
+            print(f"ERROR in _handle_command_sequence: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def _handle_command_sequence_impl(self, commands):
+        if not commands or not isinstance(commands, list):
+            return {"success": False, "error": "No commands provided"}
+            
+        log = []
+        
+        for cmd in commands:
+            if not isinstance(cmd, dict) or 'name' not in cmd:
+                return {"success": False, "error": f"Invalid command: {cmd}"}
+                
+            # Prepare the command for the queue
+            cmd_data = {
+                "type": "cmd",
+                "name": cmd["name"],
+                "speed": cmd.get("speed"),
+                "duration_ms": cmd.get("duration_ms"),
+                "duration_s": cmd.get("duration_s")
+            }
+            
+            try:
+                # Put the command in the queue
+                self.commands.put_nowait(cmd_data)
+                
+                # Get the current state for logging (this is a simplified version)
+                state = self.hub.get_state() if hasattr(self.hub, "get_state") else {}
+                
+                # Add to log
+                log_entry = {
+                    "timestamp_iso": datetime.datetime.now().isoformat(),  # Using the datetime module
+                    "mode": state.get("mode", "REMOTE"),
+                    "front_distance_cm": state.get("front_distance_cm"),
+                    "left_distance_cm": state.get("left_distance_cm"),
+                    "right_distance_cm": state.get("right_distance_cm"),
+                    "executed_motion": cmd["name"],
+                    "executed_speed": cmd.get("speed", 0.0),
+                    "next_motion": "",  # Not available in this simple implementation
+                    "next_speed": 0.0,  # Not available in this simple implementation
+                    "notes": f"Executed {cmd['name']}",
+                    "stuck_triggered": 0,
+                    "queue_len": self.commands.qsize()
+                }
+                log.append(log_entry)
+                
+                # Small delay to allow the command to be processed
+                time.sleep(0.1)
+                
+            except Exception as e:
+                print(f"ERROR in command execution: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return {
+                    "success": False, 
+                    "error": f"Error executing command {cmd}: {str(e)}",
+                    "debug": {
+                        "error_type": str(type(e).__name__),
+                        "error_message": str(e),
+                        "available_modules": list(sys.modules.keys())
+                    },
+                    "log": log
+                }
+        
+        return {"success": True, "log": log}
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -169,7 +266,57 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        print("\n=== New POST Request ===")
+        print(f"Path: {self.path}")
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/command_seq":
+            print("Handling /api/command_seq request")
+            obj = self._read_json() or {}
+            commands = obj.get("commands", [])
+            
+            # Get the controller instance from the server
+            print("\n--- Controller Check ---")
+            controller = getattr(self, 'controller', None)
+            print(f"Controller from self: {controller}")
+            if not controller:
+                print("Controller not found in self, checking class variables...")
+                controller = getattr(DashboardHandler, 'controller', None)
+                print(f"Controller from class: {controller}")
+            
+            if not controller:
+                self.send_response(500)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Controller not available"}).encode("utf-8"))
+                return
+                
+            if not isinstance(commands, list):
+                self.send_response(400)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Commands must be a list"}).encode("utf-8"))
+                return
+            
+            try:
+                # Delegate command sequence execution to the controller
+                result = controller.execute_command_sequence(commands)
+                
+                # Send the response
+                self.send_response(200 if result.get("success", False) else 400)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+            
         if parsed.path == "/api/cmd":
             obj = self._read_json() or {}
             name = obj.get("name")
@@ -258,9 +405,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(404); self._set_cors(); self.end_headers()
 
 
-def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None):
+def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None, controller=None):
     hub = DashboardHub()
-    commands_q: "queue.Queue[object]" = queue.Queue()
+    # Use the controller's existing command queue instead of creating a new one
+    commands_q = controller.commands_q if controller and hasattr(controller, 'commands_q') else queue.Queue()
     handler_cls = partial(DashboardHandler, directory=root_dir)
     try:
         httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
@@ -272,6 +420,7 @@ def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None,
     DashboardHandler.commands = commands_q
     DashboardHandler.config_manager = config_manager
     DashboardHandler.policy_manager = policy_manager
+    DashboardHandler.controller = controller  # Set the controller
 
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
