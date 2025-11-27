@@ -14,7 +14,7 @@ try:
     from firmware.control.controller import Controller
     from firmware.config_manager import ConfigManager
     from firmware.policy_manager import PolicyManager
-    from firmware.control.policy import decide_next_motion as default_policy
+    from firmware.control.policy import Policy as DefaultPolicy
 except Exception:
     import config  # type: ignore
     from hardware.ultrasonic import MultiUltrasonic  # type: ignore
@@ -23,7 +23,7 @@ except Exception:
     from control.controller import Controller  # type: ignore
     from config_manager import ConfigManager  # type: ignore
     from policy_manager import PolicyManager  # type: ignore
-    from control.policy import decide_next_motion as default_policy  # type: ignore
+    from control.policy import Policy as DefaultPolicy  # type: ignore
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     overrides_path = os.path.join(project_root, "firmware", "config_overrides.json")
     policy_path = os.path.join(project_root, "firmware", "policies", "custom_policy.py")
     cfg_mgr = ConfigManager(config, overrides_path)
-    policy_mgr = PolicyManager(default_policy, policy_path)
+    policy_mgr = PolicyManager(DefaultPolicy, policy_path, config)
 
     # Debug output
     print("\n=== Debug Info ===")
