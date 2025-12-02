@@ -118,7 +118,7 @@ class Controller:
             return {"success": False, "error": "No commands provided"}
             
         log = []
-        
+
         for cmd in commands:
             if not isinstance(cmd, dict) or 'name' not in cmd:
                 return {
@@ -126,19 +126,37 @@ class Controller:
                     "error": f"Invalid command: {cmd}",
                     "log": log
                 }
-                
+
+            name = cmd["name"]
+
             # Get duration in seconds (convert from ms if needed)
             duration_s = cmd.get('duration_s')
             if duration_s is None and 'duration_ms' in cmd:
                 duration_s = cmd['duration_ms'] / 1000.0
             if duration_s is None:
-                duration_s = 0.5  # Default duration if not specified
-                
+                # Default duration comes from configured tick values (with overrides applied)
+                duration_s = self._duration_for_motion(name)
+
+            # Resolve speed, defaulting to configured values (respecting overrides)
+            speed = cmd.get("speed")
+            if speed is None:
+                if name == "forward":
+                    speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
+                elif name == "backward":
+                    speed = float(self._cfg("BACK_SPD", config.BACK_SPD))
+                elif name in ("left", "right"):
+                    speed = float(self._cfg("TURN_SPD", config.TURN_SPD))
+                else:
+                    # Fallback – use forward speed for unknown motions
+                    speed = float(self._cfg("FORWARD_SPD", config.FORWARD_SPD))
+            else:
+                speed = float(speed)
+
             # Prepare the command for the queue
             cmd_data = {
                 "type": "cmd",
-                "name": cmd["name"],
-                "speed": cmd.get("speed", config.FORWARD_SPD),  # Default speed from config if not specified
+                "name": name,
+                "speed": speed,
                 "duration_s": duration_s
             }
             
@@ -162,11 +180,11 @@ class Controller:
                     "front_distance_cm": state.get("front_distance_cm"),
                     "left_distance_cm": state.get("left_distance_cm"),
                     "right_distance_cm": state.get("right_distance_cm"),
-                    "executed_motion": cmd["name"],
-                    "executed_speed": cmd.get("speed", 0.5),
+                    "executed_motion": name,
+                    "executed_speed": speed,
                     "next_motion": "",
                     "next_speed": 0.0,
-                    "notes": f"Executed {cmd['name']} for {duration_s:.2f}s",
+                    "notes": f"Executed {name} for {duration_s:.2f}s",
                     "stuck_triggered": 0,
                     "queue_len": self.commands_q.qsize()
                 }
@@ -175,8 +193,8 @@ class Controller:
                 # Broadcast the updated state
                 self._broadcast({
                     **state,
-                    "executed_motion": cmd["name"],
-                    "executed_speed": cmd.get("speed", 0.5),
+                    "executed_motion": name,
+                    "executed_speed": speed,
                     "log_file": self.log_file
                 })
                 
