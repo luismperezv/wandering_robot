@@ -267,6 +267,56 @@ class Controller:
                                     
                                     # Execute the move immediately
                                     execute_motion(self.robot, name, float(speed), duration_s)
+                                    
+                                    # After executing the move in REMOTE mode, log it and broadcast state
+                                    try:
+                                        distances = self.sensor.get_distances()
+                                        front_d = distances.get('front', float('inf'))
+                                        left_d = distances.get('left', float('inf'))
+                                        right_d = distances.get('right', float('inf'))
+                                    except Exception:
+                                        front_d = left_d = right_d = float('inf')
+
+                                    mode = "REMOTE"
+                                    queue_len = self.commands_q.qsize() if self.commands_q is not None else 0
+                                    notes = f"remote_{name}"
+
+                                    # Write to CSV log if a writer is available
+                                    if callable(self.writer):
+                                        self.writer([
+                                            mode,
+                                            front_d,
+                                            left_d,
+                                            right_d,
+                                            name,
+                                            float(speed),
+                                            "idle",
+                                            0.0,
+                                            notes,
+                                            0,
+                                            queue_len,
+                                        ])
+
+                                    # Broadcast updated state
+                                    state = {
+                                        "mode": mode,
+                                        "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                                        "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                                        "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
+                                        "executed_motion": name,
+                                        "executed_speed": float(speed),
+                                        "next_motion": "idle",
+                                        "next_speed": 0.0,
+                                        "notes": notes,
+                                        "stuck": 0,
+                                        "queue_len": queue_len,
+                                        "log_file": self.log_file,
+                                    }
+                                    self._broadcast(state)
+                                    try:
+                                        self.hub.set_state(state)
+                                    except Exception:
+                                        pass
                                 elif name == 'stop':
                                     # Emergency stop - clear all state and stop immediately
                                     self.emergency_stop()
@@ -289,7 +339,56 @@ class Controller:
                                 spd = (self._cfg("FORWARD_SPD", config.FORWARD_SPD) if c == "forward"
                                        else self._cfg("BACK_SPD", config.BACK_SPD) if c == "backward"
                                        else self._cfg("TURN_SPD", config.TURN_SPD))
-                                execute_motion(self.robot, c, float(spd), self._duration_for_motion(c))
+                                duration_s = self._duration_for_motion(c)
+                                execute_motion(self.robot, c, float(spd), duration_s)
+
+                                # After executing the move in REMOTE mode, log it and broadcast state
+                                try:
+                                    distances = self.sensor.get_distances()
+                                    front_d = distances.get('front', float('inf'))
+                                    left_d = distances.get('left', float('inf'))
+                                    right_d = distances.get('right', float('inf'))
+                                except Exception:
+                                    front_d = left_d = right_d = float('inf')
+
+                                mode = "REMOTE"
+                                queue_len = self.commands_q.qsize() if self.commands_q is not None else 0
+                                notes = f"remote_{c}"
+
+                                if callable(self.writer):
+                                    self.writer([
+                                        mode,
+                                        front_d,
+                                        left_d,
+                                        right_d,
+                                        c,
+                                        float(spd),
+                                        "idle",
+                                        0.0,
+                                        notes,
+                                        0,
+                                        queue_len,
+                                    ])
+
+                                state = {
+                                    "mode": mode,
+                                    "front_distance_cm": (None if front_d == float('inf') else round(front_d, 2)),
+                                    "left_distance_cm": (None if left_d == float('inf') else round(left_d, 2)),
+                                    "right_distance_cm": (None if right_d == float('inf') else round(right_d, 2)),
+                                    "executed_motion": c,
+                                    "executed_speed": float(spd),
+                                    "next_motion": "idle",
+                                    "next_speed": 0.0,
+                                    "notes": notes,
+                                    "stuck": 0,
+                                    "queue_len": queue_len,
+                                    "log_file": self.log_file,
+                                }
+                                self._broadcast(state)
+                                try:
+                                    self.hub.set_state(state)
+                                except Exception:
+                                    pass
 
                 # If in emergency stop, stay stopped until explicitly cleared
                 if self.emergency_stopped:
