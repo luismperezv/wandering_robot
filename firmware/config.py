@@ -5,9 +5,9 @@ TICK_S           = 0.5   # discrete step duration (seconds)
 # Independent per-motion step durations
 MOVE_TICK_S      = 0.5   # forward/backward step duration (seconds)
 TURN_TICK_S      = 0.5   # left/right step duration (seconds)
-FORWARD_SPD      = 0.5
-TURN_SPD         = 0.5
-BACK_SPD         = 0.5
+FORWARD_SPD      = 0.7
+TURN_SPD         = 0.45
+BACK_SPD         = 0.6
 
 # --------- Distance Heuristics ----------
 STOP_CM          = 15.0  # too close -> evasive turn
