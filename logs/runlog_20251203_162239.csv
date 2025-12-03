@@ -1,0 +1,7 @@
+timestamp_iso,mode,front_distance_cm,left_distance_cm,right_distance_cm,executed_motion,executed_speed,next_motion,next_speed,notes,stuck_triggered,queue_len
+2025-12-03T16:22:44,REMOTE,85.02,16.72,58.18,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:22:45,REMOTE,43.60,30.10,66.11,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:22:46,REMOTE,62.47,40.90,29.63,left,0.45,idle,0.00,remote_left,0,1
+2025-12-03T16:22:46,REMOTE,43.43,53.68,47.46,left,0.45,idle,0.00,remote_left,0,1
+2025-12-03T16:22:47,REMOTE,30.96,59.21,30.23,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:22:47,REMOTE,39.10,66.11,36.10,backward,0.60,idle,0.00,remote_backward,0,0

@@ -1,0 +1,16 @@
+timestamp_iso,mode,front_distance_cm,left_distance_cm,right_distance_cm,executed_motion,executed_speed,next_motion,next_speed,notes,stuck_triggered,queue_len
+2025-12-03T16:10:29,REMOTE,26.83,54.97,42.79,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:30,REMOTE,25.34,52.74,42.92,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:31,REMOTE,26.79,52.31,43.52,right,0.45,idle,0.00,remote_right,0,1
+2025-12-03T16:10:31,REMOTE,25.38,52.35,43.13,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:32,REMOTE,26.07,51.88,39.10,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:32,REMOTE,26.84,55.18,41.12,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:33,REMOTE,25.38,56.34,39.06,right,0.45,idle,0.00,remote_right,0,1
+2025-12-03T16:10:34,REMOTE,25.38,54.97,43.30,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:34,REMOTE,26.11,53.59,40.47,right,0.45,idle,0.00,remote_right,0,1
+2025-12-03T16:10:35,REMOTE,26.75,56.55,38.60,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:35,REMOTE,26.75,56.72,42.02,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:36,REMOTE,25.34,56.55,42.75,left,0.45,idle,0.00,remote_left,0,1
+2025-12-03T16:10:37,REMOTE,26.80,56.77,43.90,forward,0.70,idle,0.00,remote_forward,0,1
+2025-12-03T16:10:37,REMOTE,26.07,56.34,41.60,right,0.45,idle,0.00,remote_right,0,0
+2025-12-03T16:10:38,REMOTE,26.11,56.38,39.06,forward,0.70,idle,0.00,remote_forward,0,0
