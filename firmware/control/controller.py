@@ -259,11 +259,16 @@ class Controller:
                                         else:
                                             speed = float(self._cfg("TURN_SPD", config.TURN_SPD))
                                     
-                                    duration_s = (
-                                        float(duration_ms) / 1000.0 if duration_ms is not None
-                                        else float(duration_s_req) if duration_s_req is not None
-                                        else float(self._cfg("TICK_S", config.TICK_S))
-                                    )
+                                    # Resolve duration:
+                                    # - If explicitly provided, respect the request
+                                    # - Otherwise, use per‑motion tick duration so TURN_TICK_S /
+                                    #   MOVE_TICK_S (and their overrides) are honored.
+                                    if duration_ms is not None:
+                                        duration_s = float(duration_ms) / 1000.0
+                                    elif duration_s_req is not None:
+                                        duration_s = float(duration_s_req)
+                                    else:
+                                        duration_s = self._duration_for_motion(name)
                                     
                                     # Execute the move immediately
                                     execute_motion(self.robot, name, float(speed), duration_s)
