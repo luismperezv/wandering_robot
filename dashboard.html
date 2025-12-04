@@ -269,7 +269,7 @@
   <body>
   <header>
     <h1>Wandering Robot • Live Dashboard</h1>
-    <div class="pill" id="modePill">Mode: AUTO</div>
+    <div class="pill" id="modePill">Mode: REMOTE</div>
   </header>
 
   <main class="container">
@@ -355,7 +355,7 @@
       <div class="panel">
         <h2>State</h2>
         <div class="kv">
-          <div class="k">Mode</div><div id="kvMode">AUTO</div>
+          <div class="k">Mode</div><div id="kvMode">REMOTE</div>
           <div class="k">Distance</div><div id="kvDistance">—</div>
           <div class="k">Motion</div><div id="kvMotion">stop</div>
           <div class="k">Speed</div><div id="kvSpeed">0.00</div>
@@ -492,7 +492,7 @@
   <script>
     // Live data via SSE and control via POST
     const state = {
-      mode: 'AUTO',
+      mode: 'REMOTE',
       distance: null,
       motion: 'stop',
       speed: 0,
@@ -623,18 +623,43 @@
       els.logBox.textContent += `[${time}] ${line}\n`;
       els.logBox.scrollTop = els.logBox.scrollHeight;
     }
-
+    
     async function sendCmd(name) {
       try {
-        await fetch('/api/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        await fetch('/api/cmd', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
       } catch {}
     }
-
+    
+    // Explicitly set robot mode via backend so UI and controller stay in sync
+    async function sendMode(mode) {
+      try {
+        const res = await fetch('/api/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Trust backend's reported mode
+          setMode(data.mode || mode);
+        } else {
+          // Fall back to local update if server didn't respond cleanly
+          setMode(mode);
+        }
+      } catch {
+        // Network error – still update UI so user sees their intent
+        setMode(mode);
+      }
+    }
+    
     // Controls wired to backend
     els.btns.toggle.onclick = () => {
       const newMode = state.mode === 'AUTO' ? 'REMOTE' : 'AUTO';
-      setMode(newMode);
-      sendCmd('toggle');
+      sendMode(newMode);
     };
     
     els.btns.stop.onclick = () => sendCmd('stop');
@@ -704,7 +729,7 @@
 
     // Initialize
     els.cardLog.textContent = state.logFile;
-    setMode('AUTO');
+    setMode('REMOTE');
     
     // Initialize button states
     els.btns.fwd.disabled = true;
