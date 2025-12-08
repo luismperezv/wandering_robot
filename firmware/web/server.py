@@ -7,6 +7,8 @@ import threading
 import time
 import urllib.parse
 import datetime
+import csv
+from glob import glob
 print(f"DEBUG - datetime module available: {hasattr(datetime, 'datetime')}")
 from pathlib import Path
 from functools import partial
@@ -161,6 +163,42 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        if parsed.path == "/api/tuning/data":
+            # Serve a specific or latest distance_tuning CSV + model JSON for plotting
+            try:
+                file_name = query.get("file", [None])[0]
+                data = self._load_tuning(file_name=file_name)
+                if not data:
+                    self.send_response(404)
+                    self._set_cors()
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode("utf-8"))
+            except Exception as e:
+                print(f"[tuning] error: {e}")
+                self.send_response(500)
+                self._set_cors()
+                self.end_headers()
+            return
+        if parsed.path == "/api/tuning/list":
+            try:
+                runs = self._list_tuning_runs()
+                self.send_response(200)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"runs": runs}).encode("utf-8"))
+            except Exception as e:
+                print(f"[tuning] list error: {e}")
+                self.send_response(500)
+                self._set_cors()
+                self.end_headers()
+            return
         if parsed.path == "/api/events":
             self.send_response(200)
             self._set_cors()
@@ -403,6 +441,91 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     return
             self.send_response(204); self._set_cors(); self.end_headers(); return
         self.send_response(404); self._set_cors(); self.end_headers()
+
+    # -------- Helpers --------
+    def _list_tuning_runs(self):
+        """List available tuning CSV/model files (newest first)."""
+        root = Path(self.directory or ".")
+        logs_dir = root / "logs"
+        if not logs_dir.exists():
+            return []
+
+        runs = []
+        csv_files = sorted(
+            glob(str(logs_dir / "distance_tuning_*.csv")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        for csv_file in csv_files:
+            csv_path = Path(csv_file)
+            ts = csv_path.stem.replace("distance_tuning_", "")
+            model_name = f"distance_tuning_model_{ts}.json"
+            model_path = logs_dir / model_name
+            runs.append(
+                {
+                    "csv": csv_path.name,
+                    "model": model_name if model_path.exists() else None,
+                    "mtime": os.path.getmtime(csv_path),
+                    "iso": datetime.datetime.fromtimestamp(os.path.getmtime(csv_path)).isoformat(timespec="seconds"),
+                }
+            )
+        return runs
+
+    def _load_tuning(self, file_name: str | None = None):
+        """Return samples + model for a specific or latest distance_tuning run."""
+        root = Path(self.directory or ".")
+        logs_dir = root / "logs"
+        if not logs_dir.exists():
+            return None
+
+        runs = self._list_tuning_runs()
+        if not runs:
+            return None
+
+        if file_name is None:
+            csv_name = runs[0]["csv"]
+        else:
+            csv_name = file_name
+
+        csv_path = logs_dir / csv_name
+        if not csv_path.exists():
+            return None
+
+        ts = Path(csv_name).stem.replace("distance_tuning_", "")
+        model_path = logs_dir / f"distance_tuning_model_{ts}.json"
+        model = {}
+        if model_path.exists():
+            try:
+                with open(model_path, "r") as f:
+                    model = json.load(f)
+            except Exception:
+                model = {}
+
+        samples = []
+        try:
+            with open(csv_path, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        samples.append(
+                            {
+                                "trial": int(row["trial"]),
+                                "direction": row["direction"],
+                                "speed": float(row["speed"]),
+                                "duration_s": float(row["duration_s"]),
+                                "start_cm": float(row["start_cm"]),
+                                "end_cm": float(row["end_cm"]),
+                                "actual_delta_cm": float(row["actual_delta_cm"]),
+                                "cmd_delta_u": float(row["cmd_delta_u"]),
+                            }
+                        )
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"[tuning] failed to read {csv_path}: {e}")
+            return None
+
+        return {"csv": csv_path.name, "model": model, "samples": samples}
 
 
 def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None, controller=None):

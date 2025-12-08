@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Distance Tuning Results</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #0f172a; background: #f8fafc; }
+    h1 { margin: 0 0 8px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08); }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .pill { padding: 4px 10px; border-radius: 999px; background: #e2e8f0; font-size: 12px; }
+    canvas { max-width: 100%; }
+    code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+    .muted { color: #475569; font-size: 13px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <h1>Distance Tuning Results</h1>
+  <div class="card">
+    <div class="row" style="align-items:center; gap:8px; margin-bottom:8px;">
+      <strong>Select run:</strong>
+      <select id="runSelect"></select>
+      <span class="muted" id="runInfo"></span>
+    </div>
+    <div id="meta" class="muted">Loading tuning runs…</div>
+  </div>
+  <div class="card">
+    <canvas id="scatter" height="320"></canvas>
+  </div>
+  <div class="card">
+    <h3>How to run</h3>
+    <p>Place the robot facing a flat wall, then run:</p>
+    <code>python -m firmware.tools.distance_tuner --trials 20</code>
+    <p class="muted">This page shows the most recent <code>distance_tuning_*.csv</code> under <code>logs/</code>.</p>
+  </div>
+
+  <script>
+    async function loadRuns() {
+      const res = await fetch("/api/tuning/list");
+      if (!res.ok) throw new Error("No tuning runs found");
+      const body = await res.json();
+      return body.runs || [];
+    }
+
+    async function loadData(file) {
+      const url = file ? `/api/tuning/data?file=${encodeURIComponent(file)}` : "/api/tuning/data";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("No tuning data found");
+      return res.json();
+    }
+
+    function renderChart(samples, model) {
+      const ctx = document.getElementById("scatter");
+
+      const points = samples.map(s => ({
+        x: s.cmd_delta_u,
+        y: s.actual_delta_cm,
+        label: `trial ${s.trial} (${s.direction} ${s.speed.toFixed(2)} @ ${s.duration_s.toFixed(2)}s)`
+      }));
+
+      // Regression line from server model
+      const xs = points.map(p => p.x);
+      const minX = Math.min(...xs, -1);
+      const maxX = Math.max(...xs, 1);
+      const line = [
+        { x: minX, y: model.slope_cm_per_speed_sec * minX + model.intercept_cm },
+        { x: maxX, y: model.slope_cm_per_speed_sec * maxX + model.intercept_cm }
+      ];
+
+      new Chart(ctx, {
+        type: "scatter",
+        data: {
+          datasets: [
+            {
+              label: "Measured Δcm (toward wall)",
+              data: points,
+              backgroundColor: "rgba(59, 130, 246, 0.8)",
+            },
+            {
+              label: "Fit (y = m x + b)",
+              data: line,
+              type: "line",
+              fill: false,
+              borderColor: "rgba(16, 185, 129, 0.9)",
+              tension: 0,
+              pointRadius: 0,
+            },
+          ],
+        },
+        options: {
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const p = ctx.raw;
+                  return `x=${p.x.toFixed(3)}, y=${p.y.toFixed(2)}`;
+                }
+              }
+            },
+            legend: { position: "bottom" }
+          },
+          scales: {
+            x: { title: { display: true, text: "speed * duration * direction_sign" } },
+            y: { title: { display: true, text: "Measured delta (cm toward wall)" } },
+          },
+        },
+      });
+    }
+
+    (async () => {
+      try {
+        const runSelect = document.getElementById("runSelect");
+        const runInfo = document.getElementById("runInfo");
+        const meta = document.getElementById("meta");
+
+        const runs = await loadRuns();
+        if (!runs.length) {
+          meta.textContent = "No tuning runs found. Run the tuner to generate data.";
+          return;
+        }
+
+        runs.forEach((r, idx) => {
+          const opt = document.createElement("option");
+          opt.value = r.csv;
+          opt.textContent = `${r.csv} (${r.iso || "unknown"})`;
+          if (idx === 0) opt.selected = true;
+          runSelect.appendChild(opt);
+        });
+
+        async function refresh(file) {
+          const data = await loadData(file);
+          const { samples, model, csv } = data;
+          meta.innerHTML = `
+            <div class="row">
+              <span class="pill">File: ${csv}</span>
+              <span class="pill">Samples: ${samples.length}</span>
+              <span class="pill">Slope: ${Number(model.slope_cm_per_speed_sec || 0).toFixed(3)} cm/(speed*s)</span>
+              <span class="pill">Intercept: ${Number(model.intercept_cm || 0).toFixed(2)} cm</span>
+              <span class="pill">R²: ${Number(model.r2 || 0).toFixed(3)}</span>
+            </div>
+            <div class="muted">Model timestamp: ${model.created_at || "unknown"}</div>
+          `;
+          runInfo.textContent = `Showing ${csv}`;
+          if (samples.length === 0) {
+            meta.textContent = "No samples found in the selected tuning CSV.";
+            return;
+          }
+          renderChart(samples, model || {});
+        }
+
+        runSelect.addEventListener("change", (e) => {
+          refresh(e.target.value);
+        });
+
+        // Initial load (latest)
+        await refresh(runs[0].csv);
+      } catch (err) {
+        document.getElementById("meta").textContent = err.message;
+        console.error(err);
+      }
+    })();
+  </script>
+</body>
+</html>
+
