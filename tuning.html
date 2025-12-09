@@ -37,6 +37,8 @@
   </div>
 
   <script>
+    let chart;
+
     async function loadRuns() {
       const res = await fetch("/api/tuning/list");
       if (!res.ok) throw new Error("No tuning runs found");
@@ -71,7 +73,11 @@
         { x: maxX, y: model.slope_cm_per_speed_sec * maxX + model.intercept_cm }
       ];
 
-      new Chart(ctx, {
+      if (chart) {
+        chart.destroy();
+      }
+
+      chart = new Chart(ctx, {
         type: "scatter",
         data: {
           datasets: [
@@ -150,6 +156,10 @@
           runInfo.textContent = `Showing ${csv}`;
           if (!filtered) {
             meta.textContent = "No valid samples to plot (all invalid/inf/nan).";
+            if (chart) {
+              chart.destroy();
+              chart = null;
+            }
             return;
           }
           renderChart(samples, model || {});
