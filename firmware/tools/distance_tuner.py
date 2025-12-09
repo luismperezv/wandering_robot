@@ -54,6 +54,7 @@ def run_trial(
     settle_s: float,
     measure_samples: int,
     measure_pause_s: float,
+    min_clearance_cm: float,
 ) -> Tuple[float, float, float, float]:
     """Execute a single motion, return (start_cm, end_cm, actual_delta_cm, cmd_delta_u)."""
     start_cm = median_distance_cm(sensors, measure_samples, measure_pause_s)
@@ -61,6 +62,12 @@ def run_trial(
     # Direction sign: +1 forward (toward wall), -1 backward (away)
     cmd_sign = 1.0 if direction == "forward" else -1.0
     cmd_delta_u = cmd_sign * speed * duration_s
+
+    # Abort forward moves when clearance is unknown/too small
+    if direction == "forward":
+        if start_cm != start_cm or start_cm in (float("inf"), float("-inf")) or start_cm < min_clearance_cm:
+            # Skip motion; return NaN delta and zero command magnitude so it doesn't pollute the fit
+            return start_cm, start_cm, float("nan"), 0.0
 
     if direction == "forward":
         robot.forward(speed)
@@ -115,8 +122,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--settle-s", type=float, default=0.35, help="Pause after motion before measuring")
     p.add_argument("--measure-samples", type=int, default=5, help="Samples per distance measurement")
     p.add_argument("--measure-pause-s", type=float, default=0.05, help="Pause between measurement samples")
-    p.add_argument("--min-clearance-cm", type=float, default=12.0, help="Minimum clearance to allow forward moves")
-    p.add_argument("--abort-clearance-cm", type=float, default=10.0, help="Abort forward moves if start distance is below this")
+    p.add_argument("--min-clearance-cm", type=float, default=10.0, help="Minimum clearance to allow forward moves")
     p.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     return p
 
@@ -154,11 +160,9 @@ def main():
 
         try:
             for trial in range(1, args.trials + 1):
-                # Choose direction respecting clearance
+                # Choose direction respecting clearance; require valid/finite reading for forward
                 start_cm = median_distance_cm(sensors, args.measure_samples, args.measure_pause_s)
-                start_valid = start_cm != float("inf") and start_cm == start_cm
-                min_clearance = max(args.min_clearance_cm, args.abort_clearance_cm)
-                can_forward = start_valid and start_cm > min_clearance
+                can_forward = (start_cm != float("inf")) and (start_cm == start_cm) and (start_cm > args.min_clearance_cm)
                 direction = random.choice(["forward", "backward"]) if can_forward else "backward"
 
                 speed = random.uniform(args.min_speed, args.max_speed)
@@ -173,6 +177,7 @@ def main():
                     args.settle_s,
                     args.measure_samples,
                     args.measure_pause_s,
+                    args.min_clearance_cm,
                 )
 
                 writer.writerow(
