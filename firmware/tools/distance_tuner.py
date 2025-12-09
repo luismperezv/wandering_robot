@@ -132,6 +132,8 @@ def main():
     if args.seed is not None:
         random.seed(args.seed)
 
+    FIXED_SPEED = 0.7
+
     os.makedirs("logs", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = os.path.join("logs", f"distance_tuning_{timestamp}.csv")
@@ -158,14 +160,44 @@ def main():
         xs = []
         ys = []
 
+        last_dirs = []
+        pending_back = False
+
         try:
             for trial in range(1, args.trials + 1):
-                # Choose direction respecting clearance; require valid/finite reading for forward
+                # Decide direction with rules:
+                # - first move must be forward
+                # - never allow 3 same directions in a row
+                # - if pending_back is set, schedule a back move (unless we insert a spacer to avoid 3-in-a-row)
                 start_cm = median_distance_cm(sensors, args.measure_samples, args.measure_pause_s)
-                can_forward = (start_cm != float("inf")) and (start_cm == start_cm) and (start_cm > args.min_clearance_cm)
-                direction = random.choice(["forward", "backward"]) if can_forward else "backward"
 
-                speed = random.uniform(args.min_speed, args.max_speed)
+                def can_forward():
+                    return (start_cm != float("inf")) and (start_cm == start_cm) and (start_cm > args.min_clearance_cm)
+
+                direction = "forward" if trial == 1 else None
+
+                if direction is None and pending_back:
+                    # Avoid 3 consecutive backs: insert a spacer forward if needed and safe
+                    if len(last_dirs) >= 2 and last_dirs[-1] == last_dirs[-2] == "backward" and can_forward():
+                        direction = "forward"
+                        # keep pending_back for the following iteration
+                    else:
+                        direction = "backward"
+                        pending_back = False
+
+                if direction is None:
+                    # General case: pick direction respecting no 3-in-a-row
+                    last_two_same = len(last_dirs) >= 2 and last_dirs[-1] == last_dirs[-2]
+                    forbidden = last_dirs[-1] if last_two_same else None
+                    candidates = ["forward", "backward"]
+                    if forbidden:
+                        candidates = [c for c in candidates if c != forbidden]
+                    # If forward not safe, fallback to back
+                    if "forward" in candidates and not can_forward():
+                        candidates = [c for c in candidates if c != "forward"] or ["backward"]
+                    direction = random.choice(candidates)
+
+                speed = FIXED_SPEED
                 duration_s = random.uniform(args.min_duration, args.max_duration)
 
                 start_cm, end_cm, actual_delta_cm, cmd_delta_u = run_trial(
@@ -179,6 +211,11 @@ def main():
                     args.measure_pause_s,
                     args.min_clearance_cm,
                 )
+
+                last_dirs.append(direction)
+                # If end distance is valid and too close, enqueue a mandatory back move next
+                if end_cm == end_cm and end_cm not in (float("inf"), float("-inf")) and end_cm < 20.0:
+                    pending_back = True
 
                 writer.writerow(
                     [trial, direction, f"{speed:.3f}", f"{duration_s:.3f}", f"{start_cm:.2f}", f"{end_cm:.2f}", f"{actual_delta_cm:.2f}", f"{cmd_delta_u:.4f}"]
