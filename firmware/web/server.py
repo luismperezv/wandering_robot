@@ -443,6 +443,16 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(404); self._set_cors(); self.end_headers()
 
     # -------- Helpers --------
+    @staticmethod
+    def _safe_float(value):
+        try:
+            f = float(value)
+            if f != f or f in (float("inf"), float("-inf")):
+                return None
+            return f
+        except Exception:
+            return None
+
     def _list_tuning_runs(self):
         """List available tuning CSV/model files (newest first)."""
         root = Path(self.directory or ".")
@@ -497,7 +507,16 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if model_path.exists():
             try:
                 with open(model_path, "r") as f:
-                    model = json.load(f)
+                    raw_model = json.load(f)
+                # sanitize model numbers
+                model = {
+                    "slope_cm_per_speed_sec": self._safe_float(raw_model.get("slope_cm_per_speed_sec")),
+                    "intercept_cm": self._safe_float(raw_model.get("intercept_cm")),
+                    "r2": self._safe_float(raw_model.get("r2")),
+                    "samples": int(raw_model.get("samples", 0)) if raw_model.get("samples") is not None else 0,
+                    "created_at": raw_model.get("created_at"),
+                    "note": raw_model.get("note"),
+                }
             except Exception:
                 model = {}
 
@@ -507,25 +526,30 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 reader = csv.DictReader(f)
                 for row in reader:
                     try:
-                        samples.append(
-                            {
-                                "trial": int(row["trial"]),
-                                "direction": row["direction"],
-                                "speed": float(row["speed"]),
-                                "duration_s": float(row["duration_s"]),
-                                "start_cm": float(row["start_cm"]),
-                                "end_cm": float(row["end_cm"]),
-                                "actual_delta_cm": float(row["actual_delta_cm"]),
-                                "cmd_delta_u": float(row["cmd_delta_u"]),
-                            }
-                        )
+                        sample = {
+                            "trial": int(row["trial"]),
+                            "direction": row["direction"],
+                            "speed": self._safe_float(row["speed"]),
+                            "duration_s": self._safe_float(row["duration_s"]),
+                            "start_cm": self._safe_float(row["start_cm"]),
+                            "end_cm": self._safe_float(row["end_cm"]),
+                            "actual_delta_cm": self._safe_float(row["actual_delta_cm"]),
+                            "cmd_delta_u": self._safe_float(row["cmd_delta_u"]),
+                        }
+                        samples.append(sample)
                     except Exception:
                         continue
         except Exception as e:
             print(f"[tuning] failed to read {csv_path}: {e}")
             return None
 
-        return {"csv": csv_path.name, "model": model, "samples": samples}
+        # Filter out samples missing core fields for plotting
+        clean_samples = [
+            s for s in samples
+            if s.get("cmd_delta_u") is not None and s.get("actual_delta_cm") is not None
+        ]
+
+        return {"csv": csv_path.name, "model": model, "samples": clean_samples}
 
 
 def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None, controller=None):

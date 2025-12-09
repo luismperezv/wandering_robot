@@ -116,6 +116,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--measure-samples", type=int, default=5, help="Samples per distance measurement")
     p.add_argument("--measure-pause-s", type=float, default=0.05, help="Pause between measurement samples")
     p.add_argument("--min-clearance-cm", type=float, default=12.0, help="Minimum clearance to allow forward moves")
+    p.add_argument("--abort-clearance-cm", type=float, default=10.0, help="Abort forward moves if start distance is below this")
     p.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     return p
 
@@ -155,7 +156,9 @@ def main():
             for trial in range(1, args.trials + 1):
                 # Choose direction respecting clearance
                 start_cm = median_distance_cm(sensors, args.measure_samples, args.measure_pause_s)
-                can_forward = start_cm == float("inf") or start_cm > args.min_clearance_cm
+                start_valid = start_cm != float("inf") and start_cm == start_cm
+                min_clearance = max(args.min_clearance_cm, args.abort_clearance_cm)
+                can_forward = start_valid and start_cm > min_clearance
                 direction = random.choice(["forward", "backward"]) if can_forward else "backward"
 
                 speed = random.uniform(args.min_speed, args.max_speed)

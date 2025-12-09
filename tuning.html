@@ -54,11 +54,13 @@
     function renderChart(samples, model) {
       const ctx = document.getElementById("scatter");
 
-      const points = samples.map(s => ({
-        x: s.cmd_delta_u,
-        y: s.actual_delta_cm,
-        label: `trial ${s.trial} (${s.direction} ${s.speed.toFixed(2)} @ ${s.duration_s.toFixed(2)}s)`
-      }));
+      const points = samples
+        .filter(s => s.cmd_delta_u !== null && s.actual_delta_cm !== null)
+        .map(s => ({
+          x: s.cmd_delta_u,
+          y: s.actual_delta_cm,
+          label: `trial ${s.trial} (${s.direction} ${s.speed?.toFixed(2) ?? "?"} @ ${s.duration_s?.toFixed(2) ?? "?"}s)`
+        }));
 
       // Regression line from server model
       const xs = points.map(p => p.x);
@@ -132,10 +134,13 @@
         async function refresh(file) {
           const data = await loadData(file);
           const { samples, model, csv } = data;
+          const total = samples.length;
+          const filtered = samples.filter(s => s.cmd_delta_u !== null && s.actual_delta_cm !== null).length;
           meta.innerHTML = `
             <div class="row">
               <span class="pill">File: ${csv}</span>
-              <span class="pill">Samples: ${samples.length}</span>
+              <span class="pill">Samples: ${total}</span>
+              <span class="pill">Plotted: ${filtered}</span>
               <span class="pill">Slope: ${Number(model.slope_cm_per_speed_sec || 0).toFixed(3)} cm/(speed*s)</span>
               <span class="pill">Intercept: ${Number(model.intercept_cm || 0).toFixed(2)} cm</span>
               <span class="pill">R²: ${Number(model.r2 || 0).toFixed(3)}</span>
@@ -143,8 +148,8 @@
             <div class="muted">Model timestamp: ${model.created_at || "unknown"}</div>
           `;
           runInfo.textContent = `Showing ${csv}`;
-          if (samples.length === 0) {
-            meta.textContent = "No samples found in the selected tuning CSV.";
+          if (!filtered) {
+            meta.textContent = "No valid samples to plot (all invalid/inf/nan).";
             return;
           }
           renderChart(samples, model || {});
