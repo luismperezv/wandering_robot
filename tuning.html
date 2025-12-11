@@ -1,21 +1,62 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Distance Tuning Results</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #0f172a; background: #f8fafc; }
-    h1 { margin: 0 0 8px; }
-    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08); }
-    .row { display: flex; flex-wrap: wrap; gap: 12px; }
-    .pill { padding: 4px 10px; border-radius: 999px; background: #e2e8f0; font-size: 12px; }
-    canvas { max-width: 100%; }
-    code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
-    .muted { color: #475569; font-size: 13px; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 16px;
+      color: #0f172a;
+      background: #f8fafc;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      font-size: 12px;
+    }
+
+    canvas {
+      max-width: 100%;
+    }
+
+    code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .muted {
+      color: #475569;
+      font-size: 13px;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
+
 <body>
   <h1>Distance Tuning Results</h1>
   <div class="card">
@@ -34,6 +75,20 @@
     <p>Place the robot facing a flat wall, then run:</p>
     <code>python -m firmware.tools.distance_tuner --trials 20</code>
     <p class="muted">This page shows the most recent <code>distance_tuning_*.csv</code> under <code>logs/</code>.</p>
+  </div>
+
+  <div class="card">
+    <h3>Test Model</h3>
+    <p>Place robot at a random distance. This will measure, calculate a move to reach 5cm, execute it, and verify.</p>
+    <div class="row" style="align-items:center">
+      <button id="testBtn"
+        style="padding:8px 16px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer;">Test
+        Model (Target: 5cm)</button>
+      <span id="testStatus" class="muted"></span>
+    </div>
+    <div id="testResults" style="margin-top:12px; display:none; background:#f1f5f9; padding:12px; border-radius:6px;">
+      <!-- Results populated by JS -->
+    </div>
   </div>
 
   <script>
@@ -169,6 +224,66 @@
           refresh(e.target.value);
         });
 
+        // Test Model Logic
+        const testBtn = document.getElementById("testBtn");
+        const testStatus = document.getElementById("testStatus");
+        const testResults = document.getElementById("testResults");
+        let currentModel = null;
+
+        testBtn.addEventListener("click", async () => {
+          if (!currentModel) {
+            alert("No model loaded!");
+            return;
+          }
+          if (confirm("Ensure robot is facing a wall and has clear space to move. Proceed?")) {
+            try {
+              testBtn.disabled = true;
+              testStatus.textContent = "Testing... (Measuring -> Moving -> Measuring)";
+              testResults.style.display = "none";
+
+              const res = await fetch("/api/tuning/test", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  model: currentModel,
+                  target_cm: 5.0
+                })
+              });
+
+              const data = await res.json();
+              if (!data.success) throw new Error(data.error || "Unknown error");
+
+              testResults.innerHTML = `
+                <div style="display:grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size:14px;">
+                  <strong>Start Distance:</strong> <span>${data.start_cm.toFixed(2)} cm</span>
+                  <strong>Target Distance:</strong> <span>${data.target_cm.toFixed(2)} cm</span>
+                  <strong>Calculated Move:</strong> <span>${data.predicted_move.direction} ${data.predicted_move.duration_s.toFixed(3)}s @ ${data.predicted_move.speed}</span>
+                  <strong>End Distance:</strong> <span>${data.end_cm.toFixed(2)} cm</span>
+                  <strong>Error:</strong> <span style="color:${Math.abs(data.error_cm) < 2 ? 'green' : 'red'}">${data.error_cm.toFixed(2)} cm</span>
+                </div>
+              `;
+              testResults.style.display = "block";
+              testStatus.textContent = "Done.";
+
+            } catch (err) {
+              alert("Test failed: " + err.message);
+              testStatus.textContent = "Failed.";
+            } finally {
+              testBtn.disabled = false;
+            }
+          }
+        });
+
+        // Hook into refresh to save current model
+        const originalRefresh = refresh;
+        refresh = async function (file) {
+          await originalRefresh(file);
+          // Re-fetch data to get the model (inefficient but safe)
+          const data = await loadData(file);
+          currentModel = data.model;
+        };
+
+
         // Initial load (latest)
         await refresh(runs[0].csv);
       } catch (err) {
@@ -178,5 +293,5 @@
     })();
   </script>
 </body>
-</html>
 
+</html>

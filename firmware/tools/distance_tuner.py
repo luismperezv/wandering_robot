@@ -248,10 +248,76 @@ def main():
     with open(model_path, "w") as f:
         json.dump(model, f, indent=2)
 
-    print("\nModel fit:")
-    print(json.dumps(model, indent=2))
     print(f"Raw data: {csv_path}")
     print(f"Model   : {model_path}")
+
+
+def test_model_accuracy(controller, model: dict, target_cm: float) -> dict:
+    """
+    Test the distance model by measuring, moving, and measuring again.
+    Uses the provided controller to execute moves and read sensors.
+    """
+    # 1. Measure starting distance
+    # We can reuse median_distance_cm if we have access to the sensor object
+    # controller.sensor should be the MultiUltrasonic instance or similar
+    sensor = getattr(controller, "sensor", None)
+    if not sensor:
+        raise ValueError("Controller has no sensor")
+
+    start_cm = median_distance_cm(sensor, samples=5, pause_s=0.05)
+    if start_cm == float("inf") or start_cm is None:
+        raise ValueError("Could not measure valid starting distance")
+
+    # 2. Calculate move
+    slope = float(model.get("slope_cm_per_speed_sec", 0))
+    intercept = float(model.get("intercept_cm", 0))
+
+    if abs(slope) < 1e-4:
+        raise ValueError("Model slope is too close to zero")
+
+    needed_delta = start_cm - target_cm
+    cmd_u = (needed_delta - intercept) / slope
+
+    # cmd_u = speed * duration * sign
+    # We use fixed speed 0.7
+    FIXED_SPEED = 0.7
+
+    if cmd_u > 0:
+        direction = "forward"
+        duration = cmd_u / FIXED_SPEED
+    else:
+        direction = "backward"
+        duration = abs(cmd_u) / FIXED_SPEED
+
+    # Cap duration for safety
+    if duration > 2.0:
+        duration = 2.0
+    if duration < 0.05:
+        duration = 0.05
+
+    print(f"[TUNING TEST] Start={start_cm:.1f}cm Target={target_cm}cm Delta={needed_delta:.1f}cm -> {direction} {duration:.2f}s")
+
+    # 3. Execute move
+    controller.execute_command_sequence([
+        {"name": direction, "speed": FIXED_SPEED, "duration_s": duration}
+    ])
+
+    # 4. Measure ending distance
+    time.sleep(0.5)  # Settle
+    end_cm = median_distance_cm(sensor, samples=5, pause_s=0.05)
+
+    return {
+        "success": True,
+        "start_cm": start_cm,
+        "target_cm": target_cm,
+        "predicted_move": {
+            "direction": direction,
+            "duration_s": duration,
+            "speed": FIXED_SPEED
+        },
+        "end_cm": end_cm,
+        "error_cm": end_cm - target_cm if end_cm is not None else None
+    }
 
 
 if __name__ == "__main__":

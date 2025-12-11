@@ -16,8 +16,10 @@ from typing import Optional, Dict, Any, List, Union
 
 try:
     from firmware.web.sse import DashboardHub, _SSEClient
+    from firmware.tools.distance_tuner import test_model_accuracy
 except Exception:
     from web.sse import DashboardHub, _SSEClient  # type: ignore
+    from tools.distance_tuner import test_model_accuracy  # type: ignore
 
 
 def _get_local_ip() -> str:
@@ -372,6 +374,37 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 pass
             self.send_response(204); self._set_cors(); self.end_headers(); return
 
+        if parsed.path == "/api/tuning/test":
+            print("Handling /api/tuning/test request")
+            obj = self._read_json() or {}
+            model = obj.get("model", {})
+            target_cm = float(obj.get("target_cm", 5.0))
+            
+            if not self.controller:
+                self.send_response(500)
+                self._set_cors()
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Controller not available"}).encode("utf-8"))
+                return
+
+            try:
+                # Delegate to distance_tuner
+                result = test_model_accuracy(self.controller, model, target_cm)
+                
+                self.send_response(200)
+                self._set_cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode("utf-8"))
+
+            except Exception as e:
+                print(f"[TUNING TEST] Error: {e}")
+                self.send_response(500)
+                self._set_cors()
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+
         if parsed.path == "/api/mode":
             obj = self._read_json() or {}
             mode = obj.get("mode")
@@ -550,6 +583,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         ]
 
         return {"csv": csv_path.name, "model": model, "samples": clean_samples}
+
+
 
 
 def start_dashboard_server(root_dir: str, port: int = 8000, config_manager=None, policy_manager=None, controller=None):
