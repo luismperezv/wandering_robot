@@ -58,23 +58,37 @@
 </head>
 
 <body>
-  <h1>Distance Tuning Results</h1>
+  <h1>Distance Tuning</h1>
   <div class="card">
     <div class="row" style="align-items:center; gap:8px; margin-bottom:8px;">
-      <strong>Select run:</strong>
-      <select id="runSelect"></select>
+      <strong>Select Bucket:</strong>
+      <select id="bucketSelect"></select>
+      <button id="newBucketBtn" class="pill" style="cursor:pointer; border:none;">+ New Bucket</button>
       <span class="muted" id="runInfo"></span>
     </div>
-    <div id="meta" class="muted">Loading tuning runs…</div>
+    <div id="meta" class="muted">Loading buckets…</div>
   </div>
+
   <div class="card">
-    <canvas id="scatter" height="320"></canvas>
+    <h3>Run Tuning Session</h3>
+    <div class="row" style="align-items:center; gap:16px;">
+      <div style="display:flex; flex-direction:column;">
+        <label style="font-size:14px; font-weight:500;">Speed: <span id="speedVal">0.70</span></label>
+        <input type="range" id="speedRange" min="0.4" max="1.0" step="0.05" value="0.70" style="width:150px;">
+      </div>
+      <div style="display:flex; flex-direction:column;">
+        <label style="font-size:14px; font-weight:500;">Trials: <span id="trialsVal">20</span></label>
+        <input type="range" id="trialsRange" min="5" max="50" step="5" value="20" style="width:150px;">
+      </div>
+      <button id="runBtn"
+        style="padding:8px 16px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; height:fit-content; align-self:flex-end;">Run
+        Test</button>
+    </div>
+    <p class="muted" style="margin-top:8px;">Runs will be saved to the selected bucket.</p>
   </div>
+
   <div class="card">
-    <h3>How to run</h3>
-    <p>Place the robot facing a flat wall, then run:</p>
-    <code>python -m firmware.tools.distance_tuner --trials 20</code>
-    <p class="muted">This page shows the most recent <code>distance_tuning_*.csv</code> under <code>logs/</code>.</p>
+    <canvas id="scatter" height="400"></canvas>
   </div>
 
   <div class="card">
@@ -95,204 +109,270 @@
 
   <script>
     let chart;
+    let currentBucket = null;
 
-    async function loadRuns() {
-      const res = await fetch("/api/tuning/list");
-      if (!res.ok) throw new Error("No tuning runs found");
-      const body = await res.json();
-      return body.runs || [];
+    // --- Regression Helper ---
+    function linearRegression(xs, ys) {
+      const n = xs.length;
+      if (n === 0) return { slope: 0, intercept: 0, r2: 0 };
+      const sumX = xs.reduce((a, b) => a + b, 0);
+      const sumY = ys.reduce((a, b) => a + b, 0);
+      const sumXX = xs.reduce((a, b) => a + b * b, 0);
+      const sumXY = xs.reduce((a, b, i) => a + xs[i] * ys[i], 0);
+
+      const denom = n * sumXX - sumX * sumX;
+      if (denom === 0) return { slope: 0, intercept: 0, r2: 0 };
+
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const intercept = (sumY - slope * sumX) / n;
+
+      // R2
+      const meanY = sumY / n;
+      const ssTot = ys.reduce((a, b) => a + Math.pow(b - meanY, 2), 0);
+      const ssRes = xs.reduce((a, b, i) => a + Math.pow(ys[i] - (slope * xs[i] + intercept), 2), 0);
+      const r2 = ssTot ? 1 - (ssRes / ssTot) : 0;
+
+      return { slope, intercept, r2 };
     }
 
-    async function loadData(file) {
-      const url = file ? `/api/tuning/data?file=${encodeURIComponent(file)}` : "/api/tuning/data";
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("No tuning data found");
+    // --- API Calls ---
+    async function loadBuckets() {
+      const res = await fetch("/api/tuning/buckets");
+      if (!res.ok) throw new Error("Failed to load buckets");
+      return (await res.json()).runs || []; // Server returns {runs: [...]} for compatibility or we should update server to return {buckets: ...}
+      // Wait, I updated server to return buckets list in _list_tuning_runs but wrapped in "runs" key in do_GET /api/tuning/list (which I should have renamed or updated)
+      // Let's check server.py... I didn't rename /api/tuning/list, I just updated _list_tuning_runs.
+      // So /api/tuning/list returns {runs: buckets}.
+      // But I also added /api/tuning/buckets POST. I should probably use /api/tuning/list for GET.
+    }
+
+    async function createBucket(name) {
+      const res = await fetch("/api/tuning/buckets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      return data;
+    }
+
+    async function runTest(bucket, speed, trials) {
+      const res = await fetch("/api/tuning/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bucket, speed, trials })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      return data;
+    }
+
+    async function loadData(bucket) {
+      const res = await fetch(`/api/tuning/data?file=${encodeURIComponent(bucket)}`);
+      if (!res.ok) throw new Error("No data found");
       return res.json();
     }
 
-    function renderChart(samples, model) {
+    // --- Charting ---
+    function renderChart(samples) {
       const ctx = document.getElementById("scatter");
 
-      const points = samples
-        .filter(s => s.cmd_delta_u !== null && s.actual_delta_cm !== null)
-        .map(s => ({
-          x: s.cmd_delta_u,
-          y: s.actual_delta_cm,
-          label: `trial ${s.trial} (${s.direction} ${s.speed?.toFixed(2) ?? "?"} @ ${s.duration_s?.toFixed(2) ?? "?"}s)`
-        }));
+      // Group by speed
+      const bySpeed = {};
+      samples.forEach(s => {
+        if (s.cmd_delta_u === null || s.actual_delta_cm === null) return;
+        const spd = s.speed?.toFixed(2) || "unknown";
+        if (!bySpeed[spd]) bySpeed[spd] = { xs: [], ys: [], pts: [] };
 
-      // Regression line from server model
-      const xs = points.map(p => p.x);
-      const minX = Math.min(...xs, -1);
-      const maxX = Math.max(...xs, 1);
-      const line = [
-        { x: minX, y: model.slope_cm_per_speed_sec * minX + model.intercept_cm },
-        { x: maxX, y: model.slope_cm_per_speed_sec * maxX + model.intercept_cm }
+        // X axis: duration * sign. 
+        // cmd_delta_u is speed * duration * sign.
+        // So x = cmd_delta_u / speed (if speed != 0)
+        // Or just use duration * sign if we have it.
+        // s.direction is "forward" (+1) or "backward" (-1)
+        const sign = s.direction === "forward" ? 1 : -1;
+        const x = s.duration_s * sign;
+
+        bySpeed[spd].xs.push(x);
+        bySpeed[spd].ys.push(s.actual_delta_cm);
+        bySpeed[spd].pts.push({ x, y: s.actual_delta_cm });
+      });
+
+      const datasets = [];
+      const colors = [
+        "#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981",
+        "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#f43f5e"
       ];
+      let colorIdx = 0;
 
-      if (chart) {
-        chart.destroy();
-      }
+      Object.keys(bySpeed).sort().forEach(spd => {
+        const group = bySpeed[spd];
+        const color = colors[colorIdx % colors.length];
+        colorIdx++;
+
+        // Scatter points
+        datasets.push({
+          label: `Speed ${spd}`,
+          data: group.pts,
+          backgroundColor: color,
+          pointRadius: 4,
+          type: 'scatter'
+        });
+
+        // Regression line
+        const reg = linearRegression(group.xs, group.ys);
+        const minX = Math.min(...group.xs, -2);
+        const maxX = Math.max(...group.xs, 2);
+
+        datasets.push({
+          label: `Fit ${spd} (m=${reg.slope.toFixed(2)})`,
+          data: [
+            { x: minX, y: reg.slope * minX + reg.intercept },
+            { x: maxX, y: reg.slope * maxX + reg.intercept }
+          ],
+          type: 'line',
+          borderColor: color,
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          borderDash: [5, 5]
+        });
+      });
+
+      if (chart) chart.destroy();
 
       chart = new Chart(ctx, {
-        type: "scatter",
-        data: {
-          datasets: [
-            {
-              label: "Measured Δcm (toward wall)",
-              data: points,
-              backgroundColor: "rgba(59, 130, 246, 0.8)",
-            },
-            {
-              label: "Fit (y = m x + b)",
-              data: line,
-              type: "line",
-              fill: false,
-              borderColor: "rgba(16, 185, 129, 0.9)",
-              tension: 0,
-              pointRadius: 0,
-            },
-          ],
-        },
+        data: { datasets },
         options: {
+          responsive: true,
           plugins: {
             tooltip: {
               callbacks: {
-                label: ctx => {
-                  const p = ctx.raw;
-                  return `x=${p.x.toFixed(3)}, y=${p.y.toFixed(2)}`;
-                }
+                label: ctx => `x=${ctx.raw.x.toFixed(3)}, y=${ctx.raw.y.toFixed(2)}`
               }
             },
             legend: { position: "bottom" }
           },
           scales: {
-            x: { title: { display: true, text: "speed * duration * direction_sign" } },
-            y: { title: { display: true, text: "Measured delta (cm toward wall)" } },
+            x: {
+              title: { display: true, text: "Duration * Direction (seconds)" },
+              type: 'linear',
+              position: 'bottom'
+            },
+            y: { title: { display: true, text: "Measured Delta (cm)" } },
           },
         },
       });
     }
 
+    // --- Main Logic ---
     (async () => {
-      try {
-        const runSelect = document.getElementById("runSelect");
-        const runInfo = document.getElementById("runInfo");
-        const meta = document.getElementById("meta");
+      const bucketSelect = document.getElementById("bucketSelect");
+      const newBucketBtn = document.getElementById("newBucketBtn");
+      const runBtn = document.getElementById("runBtn");
+      const meta = document.getElementById("meta");
 
-        const runs = await loadRuns();
-        if (!runs.length) {
-          meta.textContent = "No tuning runs found. Run the tuner to generate data.";
-          return;
+      // Sliders
+      const speedRange = document.getElementById("speedRange");
+      const speedVal = document.getElementById("speedVal");
+      const trialsRange = document.getElementById("trialsRange");
+      const trialsVal = document.getElementById("trialsVal");
+
+      speedRange.addEventListener("input", e => speedVal.textContent = parseFloat(e.target.value).toFixed(2));
+      trialsRange.addEventListener("input", e => trialsVal.textContent = e.target.value);
+
+      // Load Buckets
+      async function refreshBuckets() {
+        try {
+          // Note: /api/tuning/list returns {runs: [...]} where items are buckets now
+          const res = await fetch("/api/tuning/list");
+          const data = await res.json();
+          const buckets = data.runs || [];
+
+          bucketSelect.innerHTML = "";
+          buckets.forEach((b, idx) => {
+            const opt = document.createElement("option");
+            opt.value = b.name;
+            opt.textContent = `${b.name} (${b.iso})`;
+            if (idx === 0) opt.selected = true;
+            bucketSelect.appendChild(opt);
+          });
+
+          if (buckets.length > 0) {
+            loadBucketData(buckets[0].name);
+          } else {
+            meta.textContent = "No buckets found. Create one to start.";
+          }
+        } catch (e) {
+          console.error(e);
+          meta.textContent = "Error loading buckets.";
         }
-
-        runs.forEach((r, idx) => {
-          const opt = document.createElement("option");
-          opt.value = r.csv;
-          opt.textContent = `${r.csv} (${r.iso || "unknown"})`;
-          if (idx === 0) opt.selected = true;
-          runSelect.appendChild(opt);
-        });
-
-        async function refresh(file) {
-          const data = await loadData(file);
-          const { samples, model, csv } = data;
-          const total = samples.length;
-          const filtered = samples.filter(s => s.cmd_delta_u !== null && s.actual_delta_cm !== null).length;
-          meta.innerHTML = `
-            <div class="row">
-              <span class="pill">File: ${csv}</span>
-              <span class="pill">Samples: ${total}</span>
-              <span class="pill">Plotted: ${filtered}</span>
-              <span class="pill">Slope: ${Number(model.slope_cm_per_speed_sec || 0).toFixed(3)} cm/(speed*s)</span>
-              <span class="pill">Intercept: ${Number(model.intercept_cm || 0).toFixed(2)} cm</span>
-              <span class="pill">R²: ${Number(model.r2 || 0).toFixed(3)}</span>
-            </div>
-            <div class="muted">Model timestamp: ${model.created_at || "unknown"}</div>
-          `;
-          runInfo.textContent = `Showing ${csv}`;
-          if (!filtered) {
-            meta.textContent = "No valid samples to plot (all invalid/inf/nan).";
-            if (chart) {
-              chart.destroy();
-              chart = null;
-            }
-            return;
-          }
-          renderChart(samples, model || {});
-        }
-
-        runSelect.addEventListener("change", (e) => {
-          refresh(e.target.value);
-        });
-
-        // Test Model Logic
-        const testBtn = document.getElementById("testBtn");
-        const testStatus = document.getElementById("testStatus");
-        const testResults = document.getElementById("testResults");
-        let currentModel = null;
-
-        testBtn.addEventListener("click", async () => {
-          if (!currentModel) {
-            alert("No model loaded!");
-            return;
-          }
-          if (confirm("Ensure robot is facing a wall and has clear space to move. Proceed?")) {
-            try {
-              const targetCm = parseFloat(document.getElementById("targetDist").value) || 5.0;
-              testBtn.disabled = true;
-              testStatus.textContent = "Testing... (Measuring -> Moving -> Measuring)";
-              testResults.style.display = "none";
-
-              const res = await fetch("/api/tuning/test", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  model: currentModel,
-                  target_cm: targetCm
-                })
-              });
-
-              const data = await res.json();
-              if (!data.success) throw new Error(data.error || "Unknown error");
-
-              testResults.innerHTML = `
-                <div style="display:grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size:14px;">
-                  <strong>Start Distance:</strong> <span>${data.start_cm.toFixed(2)} cm</span>
-                  <strong>Target Distance:</strong> <span>${data.target_cm.toFixed(2)} cm</span>
-                  <strong>Calculated Move:</strong> <span>${data.predicted_move.direction} ${data.predicted_move.duration_s.toFixed(3)}s @ ${data.predicted_move.speed}</span>
-                  <strong>End Distance:</strong> <span>${data.end_cm.toFixed(2)} cm</span>
-                  <strong>Error:</strong> <span style="color:${Math.abs(data.error_cm) < 2 ? 'green' : 'red'}">${data.error_cm.toFixed(2)} cm</span>
-                </div>
-              `;
-              testResults.style.display = "block";
-              testStatus.textContent = "Done.";
-
-            } catch (err) {
-              alert("Test failed: " + err.message);
-              testStatus.textContent = "Failed.";
-            } finally {
-              testBtn.disabled = false;
-            }
-          }
-        });
-
-        // Hook into refresh to save current model
-        const originalRefresh = refresh;
-        refresh = async function (file) {
-          await originalRefresh(file);
-          // Re-fetch data to get the model (inefficient but safe)
-          const data = await loadData(file);
-          currentModel = data.model;
-        };
-
-
-        // Initial load (latest)
-        await refresh(runs[0].csv);
-      } catch (err) {
-        document.getElementById("meta").textContent = err.message;
-        console.error(err);
       }
+
+      async function loadBucketData(bucket) {
+        currentBucket = bucket;
+        meta.textContent = `Loading data for ${bucket}...`;
+        try {
+          const data = await loadData(bucket);
+          const total = data.samples.length;
+          meta.innerHTML = `
+            <span class="pill">Bucket: ${data.csv}</span>
+            <span class="pill">Samples: ${total}</span>
+          `;
+          renderChart(data.samples);
+        } catch (e) {
+          console.error(e);
+          meta.textContent = `Error loading data: ${e.message}`;
+        }
+      }
+
+      bucketSelect.addEventListener("change", e => loadBucketData(e.target.value));
+
+      newBucketBtn.addEventListener("click", async () => {
+        const name = prompt("Enter new bucket name (no spaces/special chars):");
+        if (name) {
+          try {
+            await createBucket(name);
+            await refreshBuckets();
+            // Select the new bucket (it might not be first if sorted by time, but usually is)
+            bucketSelect.value = name;
+            loadBucketData(name);
+          } catch (e) {
+            alert(e.message);
+          }
+        }
+      });
+
+      runBtn.addEventListener("click", async () => {
+        if (!currentBucket) return alert("Select a bucket first.");
+        const speed = parseFloat(speedRange.value);
+        const trials = parseInt(trialsRange.value);
+
+        if (confirm(`Run tuning session?\nBucket: ${currentBucket}\nSpeed: ${speed}\nTrials: ${trials}`)) {
+          try {
+            runBtn.disabled = true;
+            runBtn.textContent = "Running...";
+            await runTest(currentBucket, speed, trials);
+            alert("Run started! Data will appear automatically when you refresh (or we can auto-refresh).");
+            // Simple auto-refresh poll
+            let checks = 0;
+            const interval = setInterval(() => {
+              loadBucketData(currentBucket);
+              checks++;
+              if (checks > 20) clearInterval(interval); // stop after ~1 min (assuming 3s interval)
+            }, 3000);
+          } catch (e) {
+            alert(e.message);
+          } finally {
+            runBtn.disabled = false;
+            runBtn.textContent = "Run Test";
+          }
+        }
+      });
+
+      await refreshBuckets();
+
     })();
   </script>
 </body>

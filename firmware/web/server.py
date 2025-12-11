@@ -16,10 +16,10 @@ from typing import Optional, Dict, Any, List, Union
 
 try:
     from firmware.web.sse import DashboardHub, _SSEClient
-    from firmware.tools.distance_tuner import test_model_accuracy
+    from firmware.tools.distance_tuner import test_model_accuracy, run_tuning_session
 except Exception:
     from web.sse import DashboardHub, _SSEClient  # type: ignore
-    from tools.distance_tuner import test_model_accuracy  # type: ignore
+    from tools.distance_tuner import test_model_accuracy, run_tuning_session  # type: ignore
 
 
 def _get_local_ip() -> str:
@@ -405,6 +405,56 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
             return
 
+        if parsed.path == "/api/tuning/buckets":
+            obj = self._read_json() or {}
+            name = obj.get("name")
+            if not name:
+                self.send_response(400); self._set_cors(); self.end_headers(); return
+            
+            try:
+                # Create bucket folder
+                root = Path(self.directory or ".")
+                bucket_path = root / "logs" / name
+                if bucket_path.exists():
+                     self.send_response(400)
+                     self._set_cors()
+                     self.end_headers()
+                     self.wfile.write(json.dumps({"success": False, "error": "Bucket already exists"}).encode("utf-8"))
+                     return
+                
+                os.makedirs(bucket_path)
+                self.send_response(200); self._set_cors(); self.send_header("Content-Type","application/json"); self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "name": name}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500); self._set_cors(); self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+            return
+
+        if parsed.path == "/api/tuning/run":
+            obj = self._read_json() or {}
+            bucket = obj.get("bucket")
+            speed = float(obj.get("speed", 0.7))
+            trials = int(obj.get("trials", 20))
+            
+            if not bucket:
+                self.send_response(400); self._set_cors(); self.end_headers(); return
+            
+            if not self.controller:
+                 self.send_response(500); self._set_cors(); self.end_headers(); return
+
+            # Run in a separate thread to avoid blocking
+            def _run():
+                try:
+                    run_tuning_session(self.controller, bucket, speed, trials)
+                except Exception as e:
+                    print(f"Tuning run failed: {e}")
+
+            threading.Thread(target=_run, daemon=True).start()
+            
+            self.send_response(200); self._set_cors(); self.send_header("Content-Type","application/json"); self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "message": "Tuning started"}).encode("utf-8"))
+            return
+
         if parsed.path == "/api/mode":
             obj = self._read_json() or {}
             mode = obj.get("mode")
@@ -487,102 +537,82 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return None
 
     def _list_tuning_runs(self):
-        """List available tuning CSV/model files (newest first)."""
+        """List available buckets (folders in logs/)."""
         root = Path(self.directory or ".")
         logs_dir = root / "logs"
         if not logs_dir.exists():
             return []
 
-        runs = []
-        csv_files = sorted(
-            glob(str(logs_dir / "distance_tuning_*.csv")),
-            key=os.path.getmtime,
-            reverse=True,
-        )
-        for csv_file in csv_files:
-            csv_path = Path(csv_file)
-            ts = csv_path.stem.replace("distance_tuning_", "")
-            model_name = f"distance_tuning_model_{ts}.json"
-            model_path = logs_dir / model_name
-            runs.append(
-                {
-                    "csv": csv_path.name,
-                    "model": model_name if model_path.exists() else None,
-                    "mtime": os.path.getmtime(csv_path),
-                    "iso": datetime.datetime.fromtimestamp(os.path.getmtime(csv_path)).isoformat(timespec="seconds"),
-                }
-            )
-        return runs
+        buckets = []
+        # List directories in logs/
+        for item in logs_dir.iterdir():
+            if item.is_dir():
+                buckets.append({
+                    "name": item.name,
+                    "mtime": item.stat().st_mtime,
+                    "iso": datetime.datetime.fromtimestamp(item.stat().st_mtime).isoformat(timespec="seconds")
+                })
+        
+        # Sort by mtime descending
+        buckets.sort(key=lambda x: x["mtime"], reverse=True)
+        return buckets
 
     def _load_tuning(self, file_name: str | None = None):
-        """Return samples + model for a specific or latest distance_tuning run."""
+        """
+        Return aggregated samples for a specific bucket.
+        'file_name' param is reused as 'bucket_name' for compatibility/simplicity.
+        """
         root = Path(self.directory or ".")
         logs_dir = root / "logs"
         if not logs_dir.exists():
             return None
 
-        runs = self._list_tuning_runs()
-        if not runs:
+        buckets = self._list_tuning_runs()
+        if not buckets:
             return None
 
-        if file_name is None:
-            csv_name = runs[0]["csv"]
-        else:
-            csv_name = file_name
-
-        csv_path = logs_dir / csv_name
-        if not csv_path.exists():
+        bucket_name = file_name if file_name else buckets[0]["name"]
+        bucket_dir = logs_dir / bucket_name
+        
+        if not bucket_dir.exists():
             return None
-
-        ts = Path(csv_name).stem.replace("distance_tuning_", "")
-        model_path = logs_dir / f"distance_tuning_model_{ts}.json"
-        model = {}
-        if model_path.exists():
-            try:
-                with open(model_path, "r") as f:
-                    raw_model = json.load(f)
-                # sanitize model numbers
-                model = {
-                    "slope_cm_per_speed_sec": self._safe_float(raw_model.get("slope_cm_per_speed_sec")),
-                    "intercept_cm": self._safe_float(raw_model.get("intercept_cm")),
-                    "r2": self._safe_float(raw_model.get("r2")),
-                    "samples": int(raw_model.get("samples", 0)) if raw_model.get("samples") is not None else 0,
-                    "created_at": raw_model.get("created_at"),
-                    "note": raw_model.get("note"),
-                }
-            except Exception:
-                model = {}
 
         samples = []
-        try:
-            with open(csv_path, newline="") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    try:
-                        sample = {
-                            "trial": int(row["trial"]),
-                            "direction": row["direction"],
-                            "speed": self._safe_float(row["speed"]),
-                            "duration_s": self._safe_float(row["duration_s"]),
-                            "start_cm": self._safe_float(row["start_cm"]),
-                            "end_cm": self._safe_float(row["end_cm"]),
-                            "actual_delta_cm": self._safe_float(row["actual_delta_cm"]),
-                            "cmd_delta_u": self._safe_float(row["cmd_delta_u"]),
-                        }
-                        samples.append(sample)
-                    except Exception:
-                        continue
-        except Exception as e:
-            print(f"[tuning] failed to read {csv_path}: {e}")
-            return None
+        # Recursively find all CSVs in the bucket
+        csv_files = glob(str(bucket_dir / "**" / "*.csv"), recursive=True)
+        
+        for csv_path in csv_files:
+            try:
+                with open(csv_path, newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        try:
+                            sample = {
+                                "trial": int(row["trial"]),
+                                "direction": row["direction"],
+                                "speed": self._safe_float(row["speed"]),
+                                "duration_s": self._safe_float(row["duration_s"]),
+                                "start_cm": self._safe_float(row["start_cm"]),
+                                "end_cm": self._safe_float(row["end_cm"]),
+                                "actual_delta_cm": self._safe_float(row["actual_delta_cm"]),
+                                "cmd_delta_u": self._safe_float(row["cmd_delta_u"]),
+                                "source": Path(csv_path).name
+                            }
+                            samples.append(sample)
+                        except Exception:
+                            continue
+            except Exception as e:
+                print(f"[tuning] failed to read {csv_path}: {e}")
+                continue
 
         # Filter out samples missing core fields for plotting
         clean_samples = [
             s for s in samples
             if s.get("cmd_delta_u") is not None and s.get("actual_delta_cm") is not None
         ]
-
-        return {"csv": csv_path.name, "model": model, "samples": clean_samples}
+        
+        # We no longer return a server-side model
+        return {"csv": bucket_name, "model": {}, "samples": clean_samples}
 
 
 

@@ -252,6 +252,114 @@ def main():
     print(f"Model   : {model_path}")
 
 
+def run_tuning_session(controller, bucket_name: str, speed: float, trials: int):
+    """
+    Execute a tuning session with a specific speed and number of trials.
+    Saves data to logs/<bucket_name>/<speed>/<timestamp>.csv
+    """
+    # Validate inputs
+    if not bucket_name or ".." in bucket_name or "/" in bucket_name:
+        raise ValueError("Invalid bucket name")
+    
+    # Setup paths
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    speed_dir = os.path.join("logs", bucket_name, f"{speed:.2f}")
+    os.makedirs(speed_dir, exist_ok=True)
+    csv_path = os.path.join(speed_dir, f"tuning_{timestamp}.csv")
+    
+    # Get sensor from controller
+    sensor = getattr(controller, "sensor", None)
+    if not sensor:
+        raise ValueError("Controller has no sensor")
+
+    print(f"Starting tuning session: bucket={bucket_name}, speed={speed}, trials={trials}")
+    print(f"Logging to {csv_path}")
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ["trial", "direction", "speed", "duration_s", "start_cm", "end_cm", "actual_delta_cm", "cmd_delta_u"]
+        )
+
+        last_dirs = []
+        pending_back = False
+
+        try:
+            for trial in range(1, trials + 1):
+                # Measure start distance
+                start_cm = median_distance_cm(sensor, samples=5, pause_s=0.05)
+                
+                # Direction logic (reused from original)
+                def can_forward():
+                    return (start_cm != float("inf")) and (start_cm == start_cm) and (start_cm > 10.0) # min_clearance
+
+                direction = "forward" if trial == 1 else None
+
+                if direction is None and pending_back:
+                    if len(last_dirs) >= 2 and last_dirs[-1] == last_dirs[-2] == "backward" and can_forward():
+                        direction = "forward"
+                    else:
+                        direction = "backward"
+                        pending_back = False
+
+                if direction is None:
+                    last_two_same = len(last_dirs) >= 2 and last_dirs[-1] == last_dirs[-2]
+                    forbidden = last_dirs[-1] if last_two_same else None
+                    candidates = ["forward", "backward"]
+                    if forbidden:
+                        candidates = [c for c in candidates if c != forbidden]
+                    if "forward" in candidates and not can_forward():
+                        candidates = [c for c in candidates if c != "forward"] or ["backward"]
+                    direction = random.choice(candidates)
+
+                # Duration logic
+                duration_s = random.uniform(0.3, 1.2) # min/max duration
+
+                # Execute move using controller
+                # We need to manually calculate cmd_delta_u for logging
+                cmd_sign = 1.0 if direction == "forward" else -1.0
+                cmd_delta_u = cmd_sign * speed * duration_s
+
+                # Skip forward if unsafe (redundant check but safe)
+                if direction == "forward" and not can_forward():
+                     # Log as skipped/invalid
+                     writer.writerow([trial, direction, f"{speed:.3f}", f"{duration_s:.3f}", f"{start_cm:.2f}", "nan", "nan", "0.0"])
+                     f.flush()
+                     continue
+
+                controller.execute_command_sequence([
+                    {"name": direction, "speed": speed, "duration_s": duration_s}
+                ])
+                
+                time.sleep(0.35) # settle_s
+
+                end_cm = median_distance_cm(sensor, samples=5, pause_s=0.05)
+
+                if start_cm == float("inf") or end_cm == float("inf"):
+                    actual_delta_cm = float("nan")
+                else:
+                    actual_delta_cm = start_cm - end_cm
+
+                last_dirs.append(direction)
+                if end_cm == end_cm and end_cm not in (float("inf"), float("-inf")) and end_cm < 20.0:
+                    pending_back = True
+
+                writer.writerow(
+                    [trial, direction, f"{speed:.3f}", f"{duration_s:.3f}", f"{start_cm:.2f}", f"{end_cm:.2f}", f"{actual_delta_cm:.2f}", f"{cmd_delta_u:.4f}"]
+                )
+                f.flush()
+
+                print(
+                    f"[{trial:02d}/{trials}] {direction:8s} speed={speed:.2f} dur={duration_s:.2f}s "
+                    f"start={start_cm:.1f}cm end={end_cm:.1f}cm delta={actual_delta_cm:.2f}cm"
+                )
+        except Exception as e:
+            print(f"Tuning session error: {e}")
+            raise
+
+    return csv_path
+
+
 def test_model_accuracy(controller, model: dict, target_cm: float) -> dict:
     """
     Test the distance model by measuring, moving, and measuring again.
