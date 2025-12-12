@@ -199,16 +199,29 @@
       });
 
       const datasets = [];
-      const colors = [
-        "#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981",
-        "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#f43f5e"
-      ];
-      let colorIdx = 0;
+
+      // Color helper: Map speed 0.4 -> 1.0 to Hue 240 (Blue) -> 0 (Red)
+      function getColorForSpeed(speed) {
+        const minSpeed = 0.4;
+        const maxSpeed = 1.0;
+        const minHue = 240; // Blue
+        const maxHue = 0;   // Red
+
+        let s = parseFloat(speed);
+        if (isNaN(s)) return "#888888";
+
+        // Clamp
+        if (s < minSpeed) s = minSpeed;
+        if (s > maxSpeed) s = maxSpeed;
+
+        const ratio = (s - minSpeed) / (maxSpeed - minSpeed);
+        const hue = minHue + ratio * (maxHue - minHue);
+        return `hsl(${hue}, 70%, 50%)`;
+      }
 
       Object.keys(bySpeed).sort().forEach(spd => {
         const group = bySpeed[spd];
-        const color = colors[colorIdx % colors.length];
-        colorIdx++;
+        const color = getColorForSpeed(spd);
 
         // Scatter points
         datasets.push({
