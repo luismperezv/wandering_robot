@@ -274,7 +274,7 @@
                   // The 'scatter' datasets have type:'scatter' in their config, but 'item' here is the legend item.
                   // We can check the dataset index or text.
                   // Easier: check if the dataset at this index is type 'line'.
-                  const ds = chart.data.datasets[item.datasetIndex];
+                  const ds = chart.datasets[item.datasetIndex];
                   return ds.type === 'line';
                 }
               }
