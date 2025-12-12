@@ -88,7 +88,7 @@
   </div>
 
   <div class="card">
-    <canvas id="scatter" height="400"></canvas>
+    <canvas id="scatter" height="400" style="max-height: 500px"></canvas>
   </div>
 
   <div class="card">
@@ -225,7 +225,7 @@
 
         // Scatter points
         datasets.push({
-          label: `Speed ${spd}`,
+          label: `Scatter ${spd}`,
           data: group.pts,
           backgroundColor: color,
           pointRadius: 4,
@@ -238,7 +238,7 @@
         const maxX = Math.max(...group.xs, 2);
 
         datasets.push({
-          label: `Fit ${spd} (m=${reg.slope.toFixed(2)})`,
+          label: `${spd}: ${reg.slope.toFixed(1)} cm/s (R²=${reg.r2.toFixed(2)})`,
           data: [
             { x: minX, y: reg.slope * minX + reg.intercept },
             { x: maxX, y: reg.slope * maxX + reg.intercept }
@@ -259,13 +259,26 @@
         data: { datasets },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
           plugins: {
             tooltip: {
               callbacks: {
                 label: ctx => `x=${ctx.raw.x.toFixed(3)}, y=${ctx.raw.y.toFixed(2)}`
               }
             },
-            legend: { position: "bottom" }
+            legend: {
+              position: "bottom",
+              labels: {
+                filter: function (item, chart) {
+                  // Only show legend for the 'line' datasets (which contain the stats)
+                  // The 'scatter' datasets have type:'scatter' in their config, but 'item' here is the legend item.
+                  // We can check the dataset index or text.
+                  // Easier: check if the dataset at this index is type 'line'.
+                  const ds = chart.data.datasets[item.datasetIndex];
+                  return ds.type === 'line';
+                }
+              }
+            }
           },
           scales: {
             x: {
